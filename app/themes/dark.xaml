@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <LinearGradientBrush x:Key="WindowBackgroundBrush" StartPoint="0.08,0" EndPoint="0.92,1">
+        <GradientStop Color="#201E1B" Offset="0" />
+        <GradientStop Color="#181716" Offset="0.55" />
+        <GradientStop Color="#1D1B18" Offset="1" />
+    </LinearGradientBrush>
+
+    <SolidColorBrush x:Key="InkBrush" Color="#F2EFE9" />
+    <SolidColorBrush x:Key="SecondaryBrush" Color="#B3ADA3" />
+    <SolidColorBrush x:Key="TertiaryBrush" Color="#817B72" />
+    <SolidColorBrush x:Key="FaintBrush" Color="#5D5850" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#6F95FF" />
+    <SolidColorBrush x:Key="AccentHoverBrush" Color="#8DABFF" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#20283B" />
+    <SolidColorBrush x:Key="HairlineBrush" Color="#34312C" />
+    <SolidColorBrush x:Key="CardBrush" Color="#232120" />
+    <SolidColorBrush x:Key="RowHoverBrush" Color="#2C2926" />
+    <SolidColorBrush x:Key="EditRowBrush" Color="#2E2B28" />
+    <SolidColorBrush x:Key="WindowControlHoverBrush" Color="#2C2926" />
+    <SolidColorBrush x:Key="WindowControlPressedBrush" Color="#38342E" />
+    <SolidColorBrush x:Key="WindowControlGlyphBrush" Color="#A9A398" />
+    <SolidColorBrush x:Key="WindowControlGlyphHoverBrush" Color="#F2EFE9" />
+    <SolidColorBrush x:Key="CloseHoverBrush" Color="#D93D33" />
+    <SolidColorBrush x:Key="ClosePressedBrush" Color="#B83129" />
+    <SolidColorBrush x:Key="RowIconBrush" Color="#A29C92" />
+    <SolidColorBrush x:Key="IconButtonHoverBrush" Color="#36322D" />
+    <SolidColorBrush x:Key="IconButtonPressedBrush" Color="#403B34" />
+    <SolidColorBrush x:Key="IconButtonHoverGlyphBrush" Color="#F5F2EC" />
+    <SolidColorBrush x:Key="QuietHoverBrush" Color="#2E2B27" />
+    <SolidColorBrush x:Key="QuietPressedBrush" Color="#38342F" />
+    <SolidColorBrush x:Key="CheckRingBrush" Color="#5A554D" />
+    <SolidColorBrush x:Key="CheckRingHoverBrush" Color="#938C81" />
+    <SolidColorBrush x:Key="CompletedTextBrush" Color="#7F7A71" />
+    <SolidColorBrush x:Key="EditFieldBrush" Color="#1E1C1A" />
+    <SolidColorBrush x:Key="EditFieldBorderBrush" Color="#4A453D" />
+    <SolidColorBrush x:Key="ComposerBorderBrush" Color="#3A3732" />
+    <SolidColorBrush x:Key="ComposerFocusBorderBrush" Color="#6279A9" />
+    <SolidColorBrush x:Key="EmptyFillBrush" Color="#242220" />
+    <SolidColorBrush x:Key="EmptyStrokeBrush" Color="#3A3732" />
+    <SolidColorBrush x:Key="EmptyCheckBrush" Color="#6F6960" />
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#4A453E" />
+    <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#5F584E" />
+    <SolidColorBrush x:Key="ScrollThumbPressedBrush" Color="#746C61" />
+    <SolidColorBrush x:Key="ToolTipBackgroundBrush" Color="#34302B" />
+    <SolidColorBrush x:Key="ToolTipTextBrush" Color="#F7F3EC" />
+    <SolidColorBrush x:Key="ToastBackgroundBrush" Color="#383530" />
+    <SolidColorBrush x:Key="ToastTextBrush" Color="#FCFAF6" />
+    <SolidColorBrush x:Key="ToastUndoBrush" Color="#B9CDFF" />
+    <SolidColorBrush x:Key="ToastUndoHoverForegroundBrush" Color="#DDE8FF" />
+    <SolidColorBrush x:Key="ToastUndoHoverBackgroundBrush" Color="#22FFFFFF" />
+    <SolidColorBrush x:Key="TitleWordmarkBrush" Color="#B3ADA3" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#FF8A80" />
+
+    <SolidColorBrush x:Key="SettingsScrimBrush" Color="#A6000000" />
+    <SolidColorBrush x:Key="SettingsCardBrush" Color="#262320" />
+    <SolidColorBrush x:Key="SettingsFieldBrush" Color="#1C1A18" />
+    <SolidColorBrush x:Key="SettingsFieldBorderBrush" Color="#3A3631" />
+    <SolidColorBrush x:Key="SegmentTrackBrush" Color="#1D1B19" />
+    <SolidColorBrush x:Key="SegmentSelectedBrush" Color="#34302B" />
+    <SolidColorBrush x:Key="SegmentSelectedBorderBrush" Color="#4A453D" />
+    <SolidColorBrush x:Key="SegmentHoverBrush" Color="#292622" />
+    <SolidColorBrush x:Key="SettingsButtonBorderBrush" Color="#423D36" />
+    <SolidColorBrush x:Key="SettingsButtonHoverBrush" Color="#2D2A26" />
+    <SolidColorBrush x:Key="SettingsButtonPressedBrush" Color="#37332D" />
+</ResourceDictionary>
