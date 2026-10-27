@@ -1,0 +1,78 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*"
+           Name="待办"
+           Language="2052"
+           Version="1.2.0"
+           Manufacturer="DaiBan"
+           Codepage="936"
+           UpgradeCode="{B4C0A0A6-5A65-4D56-9C9B-1E3C2F5D7A11}">
+    <Package InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perUser"
+             Platform="x64" />
+    <MajorUpgrade DowngradeErrorMessage="已安装更新的待办版本。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon" SourceFile="..\app\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/paulwatcegt-ui/to-do" />
+    <Property Id="ARPPUBLISHER" Value="DaiBan" />
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="ProgramsFolder" Name="Programs">
+          <Directory Id="INSTALLFOLDER" Name="DaiBan" />
+        </Directory>
+      </Directory>
+      <Directory Id="ProgramMenuFolder" />
+      <Directory Id="DesktopFolder" />
+    </Directory>
+
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="AppFiles" Guid="{C7D6C9E1-2B0A-4F5D-9F4E-6A3B2C1D8E22}">
+        <File Id="DaiBanExe"
+              Source="..\dist\native\DaiBan.exe"
+              KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="ProgramMenuFolder"
+                    Name="待办"
+                    Description="待办 · 极简桌面待办清单"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Icon="AppIcon"
+                    Advertise="no" />
+          <Shortcut Id="DesktopShortcut"
+                    Directory="DesktopFolder"
+                    Name="待办"
+                    Description="待办 · 极简桌面待办清单"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Icon="AppIcon"
+                    Advertise="no" />
+        </File>
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+      </Component>
+
+      <Component Id="OldFilesCleanup" Guid="{D1A2B3C4-5D6E-4F70-8A9B-C0D1E2F3A4B5}">
+        <RegistryValue Root="HKCU"
+                       Key="Software\DaiBan"
+                       Name="NativeInstalled"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+        <RemoveFile Id="RemoveOldPs1" Name="DaiBan.ps1" On="install" />
+        <RemoveFile Id="RemoveOldUi" Name="ui.xaml" On="install" />
+        <RemoveFile Id="RemoveOldIco" Name="app.ico" On="install" />
+        <RemoveFile Id="RemoveOldUninstaller" Name="uninstall.ps1" On="install" />
+        <RemoveFile Id="RemoveOldLicense" Name="LICENSE" On="install" />
+        <RemoveFile Id="RemoveOldReadme" Name="README.md" On="install" />
+      </Component>
+    </DirectoryRef>
+
+    <Feature Id="MainFeature" Title="待办" Level="1">
+      <ComponentRef Id="AppFiles" />
+      <ComponentRef Id="OldFilesCleanup" />
+    </Feature>
+  </Product>
+</Wix>

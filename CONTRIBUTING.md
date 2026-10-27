@@ -5,16 +5,38 @@ Thanks for considering a contribution to DaiBan. The project intentionally stays
 ## Requirements
 
 - Windows 11
-- Windows PowerShell 5.1 (built in)
-- No build tools or package manager required
+- Windows PowerShell 5.1 (built in) and .NET Framework 4.8 (built in)
+- WiX Toolset v3 only when building the MSI installer
 
-## Run from a checkout
+No Node.js, npm, .NET SDK, or package restore is required.
+
+## Build
+
+Build the native application host:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\host\build.ps1
+```
+
+This produces `dist\native\DaiBan.exe`. The host embeds `app\DaiBan.ps1`, `app\ui.xaml`, the themes and the icon, so the installed app does not need external resource files.
+
+Build the MSI (after placing/extracting WiX v3 in `%LOCALAPPDATA%\Programs\WiX`):
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\installer\build-msi.ps1
+```
+
+This produces `dist\installer\DaiBan-1.2.0.msi`.
+
+## Run from source
+
+The existing development path still runs the WPF interface directly:
 
 ```powershell
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\app\DaiBan.ps1
 ```
 
-The app uses `%APPDATA%\DaiBan` by default. For isolated manual testing you can point the config and default data folders elsewhere:
+For isolated manual testing:
 
 ```powershell
 $env:DAIBAN_CONFIG_DIR = Join-Path $PWD '.testdata'
@@ -22,45 +44,33 @@ $env:DAIBAN_DATA_DIR = Join-Path $PWD '.testdata'
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\app\DaiBan.ps1
 ```
 
-These environment variables are development aids, not part of the user-facing settings.
+The environment variables are development aids, not part of the installed app.
 
 ## Validation
-
-Run validation before opening a pull request:
 
 ```powershell
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\validate.ps1
 ```
 
-It checks:
+The validator checks:
 
-- UTF-8 BOM and parse validity for every PowerShell file.
-- XAML parse validity.
-- Required named UI controls.
-- Complete theme resource keys for both light and dark dictionaries.
-- No contributor-specific local paths in shipped code.
+- UTF-8 BOM and syntax for PowerShell files.
+- XAML loadability and required named controls.
+- Complete theme resource keys for light and dark.
+- The native host and MSI build files are present.
+- No contributor-specific local paths in shipped source.
 
-## Code guidelines
+## Style
 
 - Keep the feature set intentionally narrow.
-- Use 4 spaces for indentation in PowerShell and XAML.
-- Keep Chinese user-facing strings in the `.ps1`/`.xaml` sources; PowerShell files with Chinese strings must be UTF-8 with BOM for Windows PowerShell 5.1.
+- Use 4 spaces in PowerShell/XAML/C#; 2 spaces in YAML/Markdown.
+- PowerShell files with Chinese strings must be UTF-8 with BOM for Windows PowerShell 5.1.
 - New visual colors belong in both `app/themes/light.xaml` and `app/themes/dark.xaml`, referenced through `DynamicResource`.
-- Prefer native Windows behavior for system dialogs and window chrome.
-- Do not add background services, auto-start entries, telemetry, or network calls without a separate design discussion.
-- Update `CHANGELOG.md` for user-visible changes.
+- Update `CHANGELOG.md` and `RELEASE_NOTES.md` for user-visible changes.
+- Do not commit signing certificates, PFX files, private keys, passwords, or build output (`dist/` is ignored).
 
-## Packaging and signing
+## Release
 
-- Package with `scripts/package.ps1`.
-- Signing is optional and requires a code-signing certificate. See [docs/SIGNING.md](docs/SIGNING.md).
-- Never commit private keys, PFX files, or passwords. The `.gitignore` already excludes common signing files.
+The MSI is intentionally a standard Windows Installer package so it can be installed without the unsigned setup-wrapper issue. Build the app and MSI, verify the MSI by installing and uninstalling it, then upload the MSI and portable EXE with checksum files to a GitHub Release.
 
-## Pull requests
-
-A useful pull request includes:
-
-- What changed and why.
-- A short manual test note (theme switched, data folder changed, etc.).
-- Screenshots for visible UI changes, including both light and dark appearance when relevant.
-- Confirmation that `tests/validate.ps1` passes.
+See [docs/SIGNING.md](docs/SIGNING.md) for signing.

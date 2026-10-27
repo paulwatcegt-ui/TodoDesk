@@ -1,72 +1,68 @@
 # Architecture
 
-DaiBan is deliberately small, but it is not a compiled application. This page explains why and how the pieces fit together.
+DaiBan is delivered as a Windows Installer package containing a single `DaiBan.exe`. This page explains the build structure, the runtime host, and the data model.
 
 ## Stack
 
-- **Windows PowerShell 5.1** is the host process.
-- **WPF** provides the native desktop window, controls, animation and layout.
-- **XAML** is loaded at runtime with `XamlReader`.
-- **PowerShell** owns the state, file persistence, theme switching and event wiring.
-- A small in-memory C# helper (compiled with `Add-Type`) wraps a few Win32/COM calls:
-  - DWM rounded corners and border tint.
-  - Native title-bar move (`WM_NCLBUTTONDOWN` / `HTCAPTION`).
-  - The modern Windows folder picker (`IFileOpenDialog` with `FOS_PICKFOLDERS`).
+- **WPF** provides the window, controls, styles and theme resources.
+- **A native .NET Framework WinExe host** (`host/DaiBanHost.cs`) starts the app, extracts embedded resources, and hosts the UI engine in-process.
+- **The existing WPF app logic** (`app/DaiBan.ps1`) is embedded as a resource at build time. It is not installed as a visible `.ps1` file.
+- **WiX Toolset v3** builds the standard per-user MSI (`installer/DaiBan.wxs`).
+- A small C# helper compiled at runtime wraps Win32/COM calls for native title-bar movement, DWM theme attributes and the modern folder picker.
 
-## Why PowerShell instead of a standalone exe?
+This hybrid structure was chosen to keep the already-tested WPF interface and local data behavior while presenting a normal Windows app experience: one `DaiBan.exe`, one MSI installer, no console, no visible scripts.
 
-Windows 11 may enable Smart App Control, which blocks newly built unsiged executables. A locally built WPF exe would be an unsigned local executable and can be rejected before it starts. Windows PowerShell, WPF and the shell folder picker are already signed Microsoft components, so hosting the UI there lets the project run without asking users to weaken application-control settings.
-
-The trade-off is visible in Task Manager: the process is Windows PowerShell. The app is still local and native WPF, but it is not a single executable.
-
-## Startup flow
+## Build flow
 
 ```text
-DaiBan.ps1
-  ├─ add WPF assemblies
-  ├─ compile native helpers
-  ├─ load %APPDATA%\DaiBan\settings.json
-  ├─ resolve the data folder (default or custom)
-  ├─ load todos.json
-  ├─ load ui.xaml
-  ├─ merge themes/<effective>.xaml into Window.Resources
-  ├─ map named controls and attach events
-  ├─ create the Application and show the Window
-  └─ autosave on changes and on close
+app/DaiBan.ps1, app/ui.xaml, themes, app.ico
+                  │
+                  ▼
+host/build.ps1 ── csc ──► dist/native/DaiBan.exe
+                  │           (resources embedded)
+                  ▼
+installer/build-msi.ps1 ── candle/light ──► dist/installer/DaiBan-1.2.0.msi
 ```
 
-The UI is intentionally loaded as runtime XAML. There is no compiled BAML step and no build tool requirement.
+The native host is compiled against the Windows PowerShell engine that ships with Windows 11. No PowerShell installation or extra runtime is required.
+
+## Startup
+
+1. `DaiBan.exe` starts as a normal GUI process and sets its taskbar identity.
+2. It extracts `ui.xaml`, light/dark theme dictionaries and the icon into `%LOCALAPPDATA%\DaiBan\host\1.2.0`.
+3. It extracts the embedded application logic into memory and runs it in an STA runspace.
+4. The app loads settings and tasks, loads `ui.xaml`, merges the effective theme, and shows the WPF window.
+5. Closing the window saves tasks and exits the process.
+
+## Installation
+
+`DaiBan-1.2.0.msi` is a per-user Windows Installer package:
+
+- Installs `DaiBan.exe` to `%LOCALAPPDATA%\Programs\DaiBan`.
+- Creates Start menu and desktop shortcuts.
+- Registers an entry in Windows “Installed apps”.
+- Removes the previous script-based install files if present.
+- Does not require administrator elevation.
+- Uninstalls through Windows Installer; task data under `%APPDATA%\DaiBan` is preserved.
+
+The portable `DaiBan.exe` is the same application without the MSI wrapper.
 
 ## Data
 
-Settings are separate from task storage:
-
 ```text
-%APPDATA%\DaiBan\settings.json   fixed location
-<chosen folder>\todos.json       movable task list
+%APPDATA%\DaiBan\settings.json   appearance and custom data folder
 %APPDATA%\DaiBan\todos.json      default task list
+<custom folder>\todos.json       optional task list location
 ```
 
-This separation means changing the task folder cannot cause the app to lose track of which folder it should use next time. Writes use a temporary file and `File.Replace`/`File.Move` to reduce partial-write risk. When changing directories, an existing destination file is copied to a timestamped `.bak-*` file first. The old source file is intentionally left in place.
+Settings and tasks are separate so changing the task folder never moves the settings file. Writes use a temporary file plus `File.Replace`/`File.Move`. When switching into a directory that already has `todos.json`, the app backs it up before overwriting, and it leaves the old source file in place.
 
 ## Themes
 
-`app/themes/light.xaml` and `app/themes/dark.xaml` define the same resource keys. XAML controls reference them through `DynamicResource`; switching themes swaps the merged theme dictionary. The title bar's native DWM dark-mode and border attributes are updated at the same time.
+`app/themes/light.xaml` and `app/themes/dark.xaml` define the same resource key set. UI controls use `DynamicResource`; switching swaps the merged theme dictionary. The native DWM dark-mode and border attributes are updated at the same time. “Follow system” reads the current user's app theme and polls it while the window is open.
 
-The “follow system” preference reads the current user's `AppsUseLightTheme` setting and polls it while the app is open. Explicit light/dark preferences are persisted and stop the poll.
+## Privacy
 
-## Window behavior
+No network requests, telemetry, accounts, auto-updates or registry writes at runtime. The MSI creates the standard Installer registration; the application itself only reads/writes its local data folder.
 
-- The window is borderless but resizable through `WindowChrome`.
-- DWM provides Windows 11 rounded corners, and the app sets the system border tint.
-- The title bar starts a native Windows move loop. This preserves normal movement behavior and avoids the failure mode of WPF `DragMove()` in this hosted process.
-- There is intentionally no maximize control; the window is designed to stay at a readable single-column size, with edge resizing.
-
-## Security and privacy
-
-- No network requests, telemetry or update checks.
-- No registry writes by the app.
-- Installer/uninstaller only copy files and create/remove shortcuts in the current user's profile.
-- Signing material is never stored in the repository.
-
-See [SIGNING.md](SIGNING.md) for release signing.
+See [SIGNING.md](SIGNING.md) for the unsigned-release caveat and signing steps.

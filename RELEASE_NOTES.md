@@ -1,45 +1,43 @@
-# 待办 · DaiBan v1.1.0
+# 待办 · DaiBan v1.2.0
 
-Windows 11 极简本地待办清单。无账号、不联网，安装后从开始菜单使用。
+Windows 11 极简本地待办清单。这一版提供正式 Windows 安装包和单文件应用。
 
-## 下载与安装
+## 下载
 
-1. 下载下方的 `DaiBan-v1.1.0.zip`。
-2. 解压到任意目录。
-3. 在解压后的目录打开 PowerShell，运行：
+- **推荐安装包**：`DaiBan-1.2.0.msi`
+- **便携版**：`DaiBan.exe`
+- 校验文件：对应的 `.sha256`
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-```
+## 安装
 
-4. 按 `Win` 键搜索「待办」启动。
+1. 下载 `DaiBan-1.2.0.msi`。
+2. 双击安装包，按 Windows 安装向导完成。
+3. 从开始菜单或桌面启动「待办」。
 
-安装只在当前用户范围进行，不需要管理员权限：
+安装到当前用户目录，不需要管理员权限：
 
-- 程序：`%LOCALAPPDATA%\Programs\DaiBan`
-- 默认数据：`%APPDATA%\DaiBan`
-- 开始菜单：`待办`
+- 程序：`%LOCALAPPDATA%\Programs\DaiBan\DaiBan.exe`
+- 数据：`%APPDATA%\DaiBan`
+- 开始菜单、桌面和 Windows「已安装的应用」中都会出现「待办」
 
-卸载：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\Programs\DaiBan\uninstall.ps1"
-```
+如果不想安装，下载 `DaiBan.exe` 便携版直接运行即可；数据位置不变。
 
 ## 本版本
 
+- 完整的 Windows Installer（MSI）安装/卸载。
+- 原生 `DaiBan.exe`，无控制台、无外部脚本文件。
 - 跟随系统 / 浅色 / 深色外观。
-- 自定义任务保存文件夹，切换时自动保护已有数据。
+- 自定义任务保存文件夹，切换时保护已有数据。
 - 修复窗口标题栏拖动。
-- 现代化原生文件夹选择器。
-- 本地自动保存，无网络请求。
+- 单文件便携版。
+- 安装目录中只保留一个 `DaiBan.exe`。
 
 ## 签名说明
 
-本版本**没有使用商业代码签名证书**，因此 Windows 可能把下载的脚本标记为来自“未知发布者”。应用由系统签名的 Windows PowerShell/WPF 组件承载，安装脚本只复制文件并创建当前用户的开始菜单快捷方式。若需要校验下载文件，请使用 Release 附件中的 `.sha256`：
+本版本**没有使用商业代码签名证书**。Windows 可能显示“未知发布者”，但安装包使用系统签名的 Windows Installer 安装。请只从本仓库的 Releases 下载，并使用附带的 `.sha256` 校验文件：
 
 ```powershell
-Get-FileHash .\DaiBan-v1.1.0.zip -Algorithm SHA256
+Get-FileHash .\DaiBan-1.2.0.msi -Algorithm SHA256
 ```
 
-系统要求：Windows 11，系统自带 Windows PowerShell 5.1。
+系统要求：Windows 11，系统自带组件即可，不需要安装额外运行库。

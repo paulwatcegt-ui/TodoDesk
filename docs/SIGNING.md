@@ -1,80 +1,49 @@
 # Release signing
 
-DaiBan does not ship a signing certificate or private key. This document explains what is ready in the repository, what is still needed for a trusted signature, and how to configure it without committing secrets.
+DaiBan is currently published without a commercial code-signing certificate. This document explains how to sign the native executable and MSI when a certificate becomes available.
 
-## What is already prepared
+## Current state
 
-- `scripts/sign.ps1` signs the three user-facing PowerShell entry points with Authenticode:
-  - `app/DaiBan.ps1`
-  - `install.ps1`
-  - `uninstall.ps1`
-- `.github/workflows/release.yml` can sign the files before packaging when these repository secrets exist:
-  - `SIGNING_PFX_BASE64` — base64 text of a PFX file containing the private key
-  - `SIGNING_PFX_PASSWORD` — the PFX password
-- Release assets include a SHA-256 checksum. `.gitignore` excludes PFX, P12, CER, KEY and secrets directories.
+- `DaiBan.exe` and `DaiBan-1.2.0.msi` are unsigned.
+- Windows may show “Unknown publisher” during installation. The MSI itself is installed by the signed Windows Installer service.
+- No certificate, private key, PFX, or password is included in this repository.
+- The download page includes SHA-256 checksum files so users can verify the download.
 
 ## What is needed
 
-A real public release needs a **code-signing certificate**:
+A publicly trusted **code-signing certificate** with a private key:
 
-- Ideally a publicly trusted OV or EV code-signing certificate. EV certificates may require a hardware token or cloud HSM; those cannot simply be stored as a PFX in GitHub Actions.
-- The certificate must include the Code Signing EKU (`1.3.6.1.5.5.7.3.3`) and its private key for signing.
-- A self-signed certificate is only suitable for local testing. It will not be trusted by other users.
+- Code Signing EKU (`1.3.6.1.5.5.7.3.3`).
+- A PFX file for exportable keys, or a hardware token/cloud HSM for higher-assurance certificates.
+- A publicly trusted certificate chain. A self-signed certificate is suitable only for local testing and will not remove “Unknown publisher” warnings on other machines.
 
-There is no universally correct certificate vendor choice. Choose a CA that supports the signing model you can use (PFX file vs. hardware token/cloud signing), and verify its Windows/Smart App Control guidance.
+## Sign the native build
 
-## Sign locally
-
-Keep the PFX outside the repository, for example in a temporary folder. Do not place it in the project tree.
+The recommended tool is Microsoft `signtool.exe` from the Windows SDK:
 
 ```powershell
-$env:DAIBAN_PFX_PASSWORD = 'your-pfx-password'
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\sign.ps1 `
-  -PfxPath 'C:\path\to\codesign.pfx'
-Remove-Item Env:\DAIBAN_PFX_PASSWORD
+signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+  /f C:\path\to\codesign.pfx /p <password> `
+  .\dist\native\DaiBan.exe
+
+signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+  /f C:\path\to\codesign.pfx /p <password> `
+  .\dist\installer\DaiBan-1.2.0.msi
 ```
 
-The password can also be supplied with `-Password`, but an environment variable is less likely to end up in shell history. For a self-signed test certificate add `-AllowUntrusted`; public releases should not use this switch.
-
-Verify any signed script:
+Verify:
 
 ```powershell
-Get-AuthenticodeSignature .\app\DaiBan.ps1 | Format-List Status, SignerCertificate
+signtool verify /pa /v .\dist\native\DaiBan.exe
+signtool verify /pa /v .\dist\installer\DaiBan-1.2.0.msi
 ```
 
-A signature status of `Valid` means the local certificate chain and hash verify. It does not guarantee Smart App Control reputation on every user's machine.
+Build the MSI **after** signing the executable so the signed EXE is inside the package, then sign the MSI.
 
-## Sign in GitHub Actions
+Do not place the PFX or password in the repository, build scripts, command history, or public issues. For CI, pass them through secret storage and remove any temporary PFX file after signing.
 
-Add the secrets under **Repository settings → Secrets and variables → Actions**:
+## Smart App Control
 
-- `SIGNING_PFX_BASE64`
-- `SIGNING_PFX_PASSWORD`
+A code signature identifies the publisher but does not guarantee that every Smart App Control machine will allow a new application. Smart App Control also considers application reputation and policy. If a user is blocked by their organisation's App Control policy, the correct fix is an administrator-approved allow rule or a trusted signed distribution — not disabling security guidance blindly.
 
-Create the base64 value locally:
-
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\path\to\codesign.pfx')) |
-  Set-Clipboard
-```
-
-On a `v*` tag, the release workflow:
-
-1. validates the project,
-2. optionally decodes the PFX to a temporary runner path and signs,
-3. packages the app,
-4. publishes the ZIP and checksum.
-
-If no signing secret is configured, releases are produced unsigned. That is intentional. Never commit a PFX or password to make a release “just work.”
-
-## Smart App Control and distribution format
-
-DaiBan is currently hosted by the signed Windows PowerShell runtime rather than distributed as an unsigned executable. That choice lets it run on Windows 11 systems where unsigned local EXEs are blocked. Authenticode-signing the scripts is useful for publisher identity and for environments that enforce script signatures, but it does not automatically give an arbitrary PowerShell project a good application reputation.
-
-If a standalone native `.exe` / `.msi` becomes a goal:
-
-- it needs a native build and a trusted code-signing certificate;
-- Smart App Control reputation may need time or a recognized publisher;
-- the current script-hosted architecture is not a substitute for that distribution model.
-
-This limitation is better made explicit in the release notes than hidden behind a signing checkbox.
+The MSI route is used because the environment's application-control policy blocked standalone setup executables, while the signed Windows Installer service can install the package. This does not remove the need for code signing for public trust.

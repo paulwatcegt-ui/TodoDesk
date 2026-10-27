@@ -18,7 +18,7 @@ $script:AppRoot = if ($PSScriptRoot) {
     Split-Path -Parent $MyInvocation.MyCommand.Definition
 }
 
-$script:AppVersion = '1.1.0'
+$script:AppVersion = '1.2.0'
 $script:ChineseCulture = [System.Globalization.CultureInfo]::GetCultureInfo('zh-CN')
 $script:DefaultDataDirectory = if ($env:DAIBAN_DATA_DIR) {
     $env:DAIBAN_DATA_DIR

@@ -45,10 +45,12 @@ $required = @(
     'app\app.ico',
     'app\themes\light.xaml',
     'app\themes\dark.xaml',
-    'install.ps1',
-    'uninstall.ps1',
-    'scripts\sign.ps1',
-    'scripts\package.ps1',
+    'host\DaiBanHost.cs',
+    'host\AssemblyInfo.cs',
+    'host\app.manifest',
+    'host\build.ps1',
+    'installer\DaiBan.wxs',
+    'installer\build-msi.ps1',
     'README.md',
     'RELEASE_NOTES.md',
     'LICENSE',
@@ -61,11 +63,14 @@ foreach ($relative in $required) {
 
 $powershellFiles = @(
     'app\DaiBan.ps1',
-    'install.ps1',
-    'uninstall.ps1',
-    'scripts\sign.ps1',
-    'scripts\package.ps1',
+    'host\build.ps1',
+    'installer\build-msi.ps1',
     'tests\validate.ps1'
+)
+
+$csharpFiles = @(
+    'host\DaiBanHost.cs',
+    'host\AssemblyInfo.cs'
 )
 
 foreach ($relative in $powershellFiles) {
@@ -146,19 +151,30 @@ foreach ($themeName in @('light', 'dark')) {
 
 $appSource = [System.IO.File]::ReadAllText(
     (Join-Path $root 'app\DaiBan.ps1'), [System.Text.Encoding]::UTF8)
-Assert-True ($appSource -match "\`$script:AppVersion\s*=\s*'[^']+'") 'app version is defined'
+Assert-True ($appSource -match "\`$script:AppVersion\s*=\s*'1\.2\.0'") 'app version is 1.2.0'
 Assert-True ($appSource -notmatch 'D:\\DeepSeekWork') 'no local workspace path in app'
 
 $userFacingSources = @(
     (Join-Path $root 'app\DaiBan.ps1'),
-    (Join-Path $root 'install.ps1'),
-    (Join-Path $root 'uninstall.ps1')
+    (Join-Path $root 'host\DaiBanHost.cs'),
+    (Join-Path $root 'host\build.ps1'),
+    (Join-Path $root 'installer\DaiBan.wxs'),
+    (Join-Path $root 'installer\build-msi.ps1')
 )
 foreach ($path in $userFacingSources) {
     if (Test-Path -LiteralPath $path) {
         $text = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
         Assert-True ($text -notmatch 'D:\\DeepSeekWork') "no local workspace path: $([IO.Path]::GetFileName($path))"
     }
+}
+
+foreach ($relative in $csharpFiles) {
+    $path = Join-Path $root $relative
+    if (-not (Test-Path -LiteralPath $path)) { continue }
+    $bytes = [System.IO.File]::ReadAllBytes($path)
+    $hasBom = $bytes.Length -ge 3 -and
+        $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+    Assert-True $hasBom "UTF-8 BOM: $relative"
 }
 
 if ($failures.Count -gt 0) {

@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   validate:
-    name: Validate Windows app
+    name: Validate and build native app
     runs-on: windows-latest
 
     steps:
@@ -22,6 +22,10 @@ jobs:
         shell: cmd
         run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\validate.ps1
 
-      - name: Package smoke test
+      - name: Build native DaiBan.exe
         shell: cmd
-        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package.ps1
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\host\build.ps1
+
+      - name: Verify native executable
+        shell: cmd
+        run: if not exist dist\native\DaiBan.exe exit 1
