@@ -370,6 +370,8 @@ function Load-Tasks {
                 IsCompleted = [bool]$saved.completed
                 CreatedAt = $createdAt
                 CompletedAt = $completedAt
+                RemindAt = $(if ($null -ne $saved.remindAt) { ConvertFrom-UnixMilliseconds -Value ([long]$saved.remindAt) } else { $null })
+                ReminderNotified = [bool]$saved.reminderNotified
                 IsEditing = $false
             }
             $tasks += $task
@@ -394,6 +396,109 @@ function Load-Tasks {
         $script:ActiveTasks.Clear()
         $script:CompletedTasks.Clear()
     }
+}
+
+function Set-TaskReminder {
+    param($Task, $At)
+    if ($null -eq $Task -or $null -ne $script:LoadError) { return }
+    if ($null -ne $At -and ($At -le (Get-Date) -or [TimeZoneInfo]::Local.IsInvalidTime($At))) {
+        throw '请选择有效的未来日期和时间。'
+    }
+    $Task | Add-Member -NotePropertyName RemindAt -NotePropertyValue $At -Force
+    $Task | Add-Member -NotePropertyName ReminderNotified -NotePropertyValue $false -Force
+    Save-Tasks
+    Refresh-TaskList
+    return $script:LastTasksSaveSucceeded
+}
+
+function Open-ReminderDialog {
+    param($Task)
+    if ($null -ne $script:LoadError) { return }
+    Commit-ActiveEdit
+    $dialog = [System.Windows.Markup.XamlReader]::Parse(@'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="时间提醒" Width="360" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
+ Background="{DynamicResource SettingsCardBrush}" Foreground="{DynamicResource InkBrush}" FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="13">
+ <StackPanel Margin="22">
+  <TextBlock Text="设置时间提醒" FontSize="20" FontWeight="SemiBold"/>
+  <TextBlock x:Name="ReminderTaskTitle" Margin="0,10,0,16" TextWrapping="Wrap" MaxHeight="48" TextTrimming="CharacterEllipsis"/>
+  <Grid>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
+   <StackPanel Margin="0,0,12,0"><TextBlock Text="日期" Margin="0,0,0,6"/><DatePicker x:Name="ReminderDate" Height="30"/></StackPanel>
+   <StackPanel Grid.Column="1"><TextBlock Text="时间（24小时）" Margin="0,0,0,6"/><TextBox x:Name="ReminderTime" Height="30" Padding="6,3" MaxLength="5" Background="{DynamicResource SettingsFieldBrush}" Foreground="{DynamicResource InkBrush}" CaretBrush="{DynamicResource AccentBrush}" BorderBrush="{DynamicResource SettingsFieldBorderBrush}"/></StackPanel>
+  </Grid>
+  <TextBlock Margin="0,12,0,0" Text="应用运行时提醒，最小化也有效。关闭期间错过的提醒将在下次打开时补发。" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryBrush}" FontSize="12"/>
+  <TextBlock x:Name="ReminderError" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource DangerBrush}"/>
+  <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+   <Button x:Name="RemoveReminder" Content="取消提醒" Margin="0,0,8,0"/>
+   <Button x:Name="SaveReminder" Content="保存" IsDefault="True"/>
+  </StackPanel>
+ </StackPanel>
+</Window>
+'@)
+    [void]$dialog.Resources.MergedDictionaries.Add($script:ThemeDictionary)
+    $dialog.Owner = $script:Window
+    $dialog.FindName('ReminderTaskTitle').Text = $Task.Title
+    $when = if ($null -ne $Task.RemindAt) { $Task.RemindAt } else { (Get-Date).AddHours(1) }
+    $date = $dialog.FindName('ReminderDate')
+    $time = $dialog.FindName('ReminderTime')
+    $errorText = $dialog.FindName('ReminderError')
+    $date.SelectedDate = $when.Date
+    $time.Text = $when.ToString('HH:mm')
+    foreach ($name in @('SaveReminder','RemoveReminder')) { $dialog.FindName($name).Style = $script:Window.FindResource('SettingsButtonStyle') }
+    $dialog.FindName('RemoveReminder').IsEnabled = $null -ne $Task.RemindAt
+    $dialog.FindName('SaveReminder').Add_Click({
+        try {
+            if ($null -eq $date.SelectedDate) { throw '请选择日期。' }
+            $clock = [datetime]::MinValue
+            if (-not [datetime]::TryParseExact($time.Text.Trim(), 'HH:mm', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$clock)) {
+                throw '时间格式应为 HH:mm，例如 09:30。'
+            }
+            $saved = Set-TaskReminder -Task $Task -At ($date.SelectedDate.Date.Add($clock.TimeOfDay))
+            if (-not $saved) { throw '提醒尚未保存，请检查保存位置后重试。' }
+            $dialog.Close()
+        }
+        catch { $errorText.Text = $_.Exception.Message }
+    }.GetNewClosure())
+    $dialog.FindName('RemoveReminder').Add_Click({
+        $saved = Set-TaskReminder -Task $Task -At $null
+        if ($saved) { $dialog.Close() } else { $errorText.Text = '取消提醒尚未保存，请重试。' }
+    }.GetNewClosure())
+    $dialog.Add_PreviewKeyDown({ param($sender,$eventArgs); if ($eventArgs.Key -eq 'Escape') { $sender.Close() } })
+    [void]$dialog.ShowDialog()
+}
+
+function Get-DueReminders {
+    param([datetime]$Now = (Get-Date))
+    return @($script:ActiveTasks | Where-Object { $null -ne $_.RemindAt -and -not $_.ReminderNotified -and $_.RemindAt -le $Now })
+}
+
+function Show-ReminderNotification {
+    param($Tasks)
+    # A separate modeless window remains visible even when the main window is minimized.
+    $notice = [System.Windows.Markup.XamlReader]::Parse(@'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="TodoDesk · 待办提醒" Width="360" SizeToContent="Height" MaxHeight="480" ResizeMode="NoResize" WindowStartupLocation="CenterScreen" Topmost="True"
+ Background="{DynamicResource SettingsCardBrush}" Foreground="{DynamicResource InkBrush}" FontFamily="Microsoft YaHei UI, Segoe UI">
+ <StackPanel Margin="22"><TextBlock Text="到时间了" FontSize="22" FontWeight="SemiBold"/><ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto" Margin="0,16"><TextBlock x:Name="NoticeText" TextWrapping="Wrap" FontSize="15"/></ScrollViewer><Button x:Name="DismissNotice" Content="知道了" HorizontalAlignment="Right"/></StackPanel>
+</Window>
+'@)
+    [void]$notice.Resources.MergedDictionaries.Add($script:ThemeDictionary)
+    $notice.FindName('NoticeText').Text = (@($Tasks | ForEach-Object { $_.Title }) -join ([Environment]::NewLine + [Environment]::NewLine))
+    $notice.FindName('DismissNotice').Style = $script:Window.FindResource('SettingsButtonStyle')
+    $notice.FindName('DismissNotice').Add_Click({ $notice.Close() }.GetNewClosure())
+    $notice.Show()
+    [System.Media.SystemSounds]::Exclamation.Play()
+}
+
+function Check-Reminders {
+    if ($null -ne $script:LoadError) { return }
+    $due = @(Get-DueReminders)
+    if ($due.Count -eq 0) { return }
+    Show-ReminderNotification -Tasks $due
+    foreach ($task in $due) { $task.ReminderNotified = $true }
+    Save-Tasks
+    if ($null -eq $script:EditingContext) { Refresh-TaskList }
 }
 
 function Update-StorageStatus {
@@ -439,6 +544,8 @@ function Save-Tasks {
             $items += [pscustomobject][ordered]@{
                 id = $task.Id
                 title = $task.Title
+                remindAt = $(if ($null -ne $task.RemindAt) { Get-UnixMilliseconds -Value $task.RemindAt } else { $null })
+                reminderNotified = [bool]$task.ReminderNotified
                 completed = $false
                 createdAt = Get-UnixMilliseconds -Value $task.CreatedAt
                 completedAt = $null
@@ -452,6 +559,8 @@ function Save-Tasks {
             $items += [pscustomobject][ordered]@{
                 id = $task.Id
                 title = $task.Title
+                remindAt = $(if ($null -ne $task.RemindAt) { Get-UnixMilliseconds -Value $task.RemindAt } else { $null })
+                reminderNotified = [bool]$task.ReminderNotified
                 completed = $true
                 createdAt = Get-UnixMilliseconds -Value $task.CreatedAt
                 completedAt = Get-UnixMilliseconds -Value $completedAt
@@ -946,7 +1055,7 @@ function Update-ResponsiveLayout {
     $script:ComposerHost.Height = if ($compact) { 46 } else { 56 }
     $script:ComposerHost.Margin = [System.Windows.Thickness]::new(0,$(if ($compact) { 14 } else { 26 }),0,0)
     $script:TaskArea.Margin = [System.Windows.Thickness]::new(0,$(if ($compact) { 14 } else { 22 }),0,0)
-    $script:TaskArea.RowDefinitions[0].Height = [System.Windows.GridLength]::new($(if ($compact) { 34 } else { 42 }))
+    $script:TaskArea.RowDefinitions[0].Height = [System.Windows.GridLength]::Auto
     $script:TaskArea.RowDefinitions[2].Height = [System.Windows.GridLength]::new($(if ($compact) { 38 } else { 45 }))
     $script:ListCard.Padding = [System.Windows.Thickness]::new($(if ($compact) { 8 } else { 12 }))
 }
@@ -1072,6 +1181,18 @@ function New-TaskRow {
         }
     })
     [void]$textHost.Children.Add($title)
+    $reminderLabel = $null
+    if ($null -ne $Task.RemindAt -and -not $Task.IsCompleted) {
+        $title.Margin = [System.Windows.Thickness]::new(0,0,0,16)
+        $reminderLabel = [System.Windows.Controls.TextBlock]::new()
+        $reminderLabel.Text = '提醒 · ' + $Task.RemindAt.ToString('MM-dd HH:mm')
+        $reminderLabel.FontSize = 11.5
+        $reminderLabel.VerticalAlignment = 'Bottom'
+        $reminderLabel.Margin = [System.Windows.Thickness]::new(0,0,0,5)
+        $reminderLabel.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'SecondaryBrush')
+        $reminderLabel.IsHitTestVisible = $false
+        [void]$textHost.Children.Add($reminderLabel)
+    }
 
     $editor = New-Object System.Windows.Controls.TextBox
     $editor.Style = $script:InlineEditStyle
@@ -1084,8 +1205,8 @@ function New-TaskRow {
     $actions = New-Object System.Windows.Controls.StackPanel
     $actions.Orientation = [System.Windows.Controls.Orientation]::Horizontal
     $actions.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
-    $actions.Opacity = 0
-    $actions.IsHitTestVisible = $false
+    $actions.Opacity = 1
+    $actions.IsHitTestVisible = $true
     [System.Windows.Controls.Grid]::SetColumn($actions, 2)
 
     $editButton = New-RowActionButton `
@@ -1102,6 +1223,19 @@ function New-TaskRow {
         -Context $null
     $deleteButton.Margin = [System.Windows.Thickness]::new(1, 0, 0, 0)
 
+    $reminderButton = New-RowActionButton -Geometry 'M 8,1 A 7,7 0 1 1 7.99,1 M 8,4 L 8,8 L 11,10' -ToolTip '设置时间提醒' -Style $script:RowIconStyle -Context $null
+    $reminderButton.Tag = $Task
+    $reminderButton.Add_Click({ param($sender, $eventArgs); Open-ReminderDialog -Task $sender.Tag })
+    [System.Windows.Automation.AutomationProperties]::SetName($reminderButton, '设置时间提醒')
+    [System.Windows.Automation.AutomationProperties]::SetAutomationId($reminderButton, 'Reminder_' + [string]$Task.Id)
+    if ($null -ne $Task.RemindAt) {
+        $reminderButton.SetResourceReference([System.Windows.Controls.Control]::ForegroundProperty, 'AccentBrush')
+        $reminderButton.ToolTip = '提醒：' + $Task.RemindAt.ToString('yyyy-MM-dd HH:mm')
+        $title.ToolTip += [Environment]::NewLine + $reminderButton.ToolTip
+    }
+    # Keep the clock discoverable without taking width away from the task title.
+    $reminderButton.Opacity = 1
+    [void]$actions.Children.Add($reminderButton)
     [void]$actions.Children.Add($editButton)
     [void]$actions.Children.Add($deleteButton)
     [void]$grid.Children.Add($actions)
@@ -1124,6 +1258,7 @@ function New-TaskRow {
         Check = $check
         Title = $title
         Editor = $editor
+        ReminderLabel = $reminderLabel
         Actions = $actions
         EditButton = $editButton
         DeleteButton = $deleteButton
@@ -1211,8 +1346,8 @@ function New-TaskRow {
         if ($null -eq $ctx) { return }
         if (-not $ctx.IsEditing -and -not $sender.IsKeyboardFocusWithin) {
             $ctx.Row.Background = $script:TransparentBrush
-            $ctx.Actions.Opacity = 0
-            $ctx.Actions.IsHitTestVisible = $false
+            $ctx.Actions.Opacity = 1
+            $ctx.Actions.IsHitTestVisible = $true
         }
     })
 
@@ -1328,6 +1463,7 @@ function Start-EditTask {
     }
 
     $Context.IsEditing = $true
+    if ($null -ne $Context.ReminderLabel) { $Context.ReminderLabel.Visibility = 'Collapsed' }
     $Context.Row.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'EditRowBrush')
     $Context.Title.Visibility = [System.Windows.Visibility]::Collapsed
     $Context.Editor.Visibility = [System.Windows.Visibility]::Visible
@@ -1377,6 +1513,7 @@ function Complete-Edit {
         [string]$Context.Task.Title)
 
     $Context.IsEditing = $false
+    if ($null -ne $Context.ReminderLabel) { $Context.ReminderLabel.Visibility = 'Visible' }
     $Context.Editor.Visibility = [System.Windows.Visibility]::Collapsed
     $Context.Title.Visibility = [System.Windows.Visibility]::Visible
     $Context.Actions.Visibility = [System.Windows.Visibility]::Visible
@@ -1388,8 +1525,8 @@ function Complete-Edit {
     }
     else {
         $Context.Row.Background = $script:TransparentBrush
-        $Context.Actions.Opacity = 0
-        $Context.Actions.IsHitTestVisible = $false
+        $Context.Actions.Opacity = 1
+        $Context.Actions.IsHitTestVisible = $true
     }
 
     if ($script:EditingContext -eq $Context) {
@@ -1413,6 +1550,7 @@ function Cancel-Edit {
 
     $Context.Editor.Text = [string]$Context.Task.Title
     $Context.IsEditing = $false
+    if ($null -ne $Context.ReminderLabel) { $Context.ReminderLabel.Visibility = 'Visible' }
     $Context.Editor.Visibility = [System.Windows.Visibility]::Collapsed
     $Context.Title.Visibility = [System.Windows.Visibility]::Visible
     $Context.Actions.Visibility = [System.Windows.Visibility]::Visible
@@ -1424,8 +1562,8 @@ function Cancel-Edit {
     }
     else {
         $Context.Row.Background = $script:TransparentBrush
-        $Context.Actions.Opacity = 0
-        $Context.Actions.IsHitTestVisible = $false
+        $Context.Actions.Opacity = 1
+        $Context.Actions.IsHitTestVisible = $true
     }
 
     if ($script:EditingContext -eq $Context) {
@@ -1460,6 +1598,8 @@ function Add-TaskFromComposer {
         IsCompleted = $false
         CreatedAt = Get-Date
         CompletedAt = $null
+        RemindAt = $null
+        ReminderNotified = $false
         IsEditing = $false
     }
 
@@ -1987,6 +2127,7 @@ $script:WindowLoadedHandler = {
         $script:ClockTimer.Start()
     }
 
+    Check-Reminders
     $sender.Activate() | Out-Null
     $script:NewTaskInput.Focus() | Out-Null
     [System.Windows.Input.Keyboard]::Focus($script:NewTaskInput) | Out-Null
@@ -2246,8 +2387,8 @@ try {
 
     $script:UpdateDateTimer = New-Object System.Windows.Threading.DispatcherTimer
     $script:ClockTimer = $script:UpdateDateTimer
-    $script:ClockTimer.Interval = [TimeSpan]::FromMinutes(1)
-    $script:ClockTimer.Add_Tick({ Update-Date })
+    $script:ClockTimer.Interval = [TimeSpan]::FromSeconds(10)
+    $script:ClockTimer.Add_Tick({ Update-Date; Check-Reminders })
 
     Update-Date
     Update-ComposerState

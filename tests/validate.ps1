@@ -40,6 +40,7 @@ if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
 }
 
 $required = @(
+    'tests\reminders.ps1',
     'tests\window.ps1',
     'preview.ps1',
     'tests\smoke.ps1',
@@ -65,6 +66,7 @@ foreach ($relative in $required) {
 }
 
 $powershellFiles = @(
+    'tests\reminders.ps1',
     'tests\window.ps1',
     'preview.ps1',
     'tests\smoke.ps1',

@@ -2,6 +2,9 @@
 
 ## 1.3.0 — Unreleased
 
+- Fixed compact filter-label clipping by measuring the row from its content.
+- Added per-task local reminder times, cancellation, overdue catch-up on launch and a separate notification window that works while minimized.
+
 - Updated the palette to cool slate and periwinkle using the supplied visual reference.
 - Centered checkmark geometry, added completed-task strikethrough and enabled a compact 400x400 window with a fitting settings dialog.
 

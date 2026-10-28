@@ -712,7 +712,7 @@
                 </Grid>
 
                 <Grid x:Name="TaskArea" Grid.Row="3" Margin="0,22,0,0">
-                    <Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*" MinHeight="80"/><RowDefinition Height="45"/></Grid.RowDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*" MinHeight="80"/><RowDefinition Height="45"/></Grid.RowDefinitions>
                     <Grid Grid.Row="0" Margin="0,0,0,12">
                         <StackPanel Orientation="Horizontal">
                             <RadioButton x:Name="FilterAll" Content="全部" Tag="all" IsChecked="True" GroupName="TaskFilter" Style="{StaticResource FilterStyle}" AutomationProperties.Name="查看全部任务"/>

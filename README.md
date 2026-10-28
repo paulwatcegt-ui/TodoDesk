@@ -48,7 +48,15 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\preview.ps1 -Empt
 
 标题栏支持原生拖动、双击最大化和还原，提供最小化、最大化 / 还原、关闭按钮。最大化边界按当前显示器工作区计算。
 
-进度代表当前清单的完成比例，不是每日统计。不包含提醒、到期日、云同步或自动更新。
+进度代表当前清单的完成比例，不是每日统计。不包含云同步或自动更新。
+
+## 时间提醒
+
+点击任务右侧的时钟按钮，选择日期并输入 24 小时制时间（例如 `09:30`），即可设置提醒。再次点击可修改或取消。设置后，任务标题下方显示提醒时间。
+
+应用运行或最小化时，每 10 秒检查一次，到点弹出独立窗口并播放系统提示音。已完成任务不提醒，同一次提醒不重复弹出。关闭应用期间不会运行后台服务，错过的提醒会在下次打开应用时补发。
+
+时间和已提醒标记保存在原本的 `todos.json` 中，作为可选字段加入；原有清单无需迁移。更改时间会重置已提醒状态。
 
 ## 数据与快捷键
 
@@ -74,6 +82,9 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\smoke.ps1
 
 # 原生窗口、焦点、命中测试及最大化工作区
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\window.ps1
+
+# 提醒保存、触发、取消、最小化弹窗及紧凑文字检查
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\reminders.ps1
 
 # 构建单文件：dist/native/DaiBan.exe
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\host\build.ps1
