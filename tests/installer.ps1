@@ -42,7 +42,11 @@ try {
     $shell = New-Object -ComObject WScript.Shell
     foreach ($shortcut in $shortcuts) {
         Assert (Test-Path -LiteralPath $shortcut) 'Installer creates the current-user shortcut'
-        Assert ($shell.CreateShortcut($shortcut).TargetPath -eq $exe) 'Shortcut points to the selected install path'
+        $shortcutTarget = $shell.CreateShortcut($shortcut).TargetPath
+        # Windows may report a short (8.3) alias on a different system locale.
+        Assert (Test-Path -LiteralPath $shortcutTarget) ('Shortcut target exists: ' + $shortcutTarget + '; expected ' + $exe)
+        $targetItem = Get-Item -LiteralPath $shortcutTarget
+        Assert ($targetItem.Name -eq 'TodoDesk.exe' -and (Get-FileHash -LiteralPath $shortcutTarget).Hash -eq (Get-FileHash -LiteralPath $exe).Hash) ('Shortcut resolves to the verified installed executable: ' + $shortcutTarget)
     }
     Assert ($installer.ProductInfo($productCode,'ProductName') -eq 'TodoDesk' -and $installer.ProductInfo($productCode,'Publisher') -eq '宋培恩') 'Windows Installer registers the correct product and maintainer'
     $env:DAIBAN_DATA_DIR = Join-Path $testRoot 'app-data'
