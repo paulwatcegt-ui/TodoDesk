@@ -32,6 +32,38 @@ function Run-Msi([string[]]$Arguments) {
 }
 $installed = $false
 $appProcess = $null
+Add-Type -TypeDefinition @'
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+public static class InstallerShortcutReader {
+    [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+    private class ShellLink { }
+    [ComImport, Guid("000214F9-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellLinkW {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder path, int size, IntPtr data, uint flags);
+        void GetIDList(out IntPtr list);
+    }
+    [DllImport("shell32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)]
+    private static extern bool SHGetPathFromIDListW(IntPtr list, [Out] StringBuilder path);
+    public static string Target(string shortcut) {
+        object instance = new ShellLink();
+        IntPtr list = IntPtr.Zero;
+        try {
+            ((IPersistFile)instance).Load(shortcut, 0);
+            ((IShellLinkW)instance).GetIDList(out list);
+            StringBuilder path = new StringBuilder(32768);
+            if (list != IntPtr.Zero && SHGetPathFromIDListW(list,path)) return path.ToString();
+            ((IShellLinkW)instance).GetPath(path,path.Capacity,IntPtr.Zero,0);
+            return path.ToString();
+        } finally {
+            if (list != IntPtr.Zero) Marshal.FreeCoTaskMem(list);
+            Marshal.ReleaseComObject(instance);
+        }
+    }
+}
+'@
 try {
     Run-Msi @('/i', ('"' + $MsiPath + '"'), '/qn', '/norestart', ('INSTALLFOLDER="' + $installRoot + '"'), '/L*V', ('"' + (Join-Path $testRoot 'install.log') + '"'))
     $installed = $true
@@ -42,8 +74,9 @@ try {
     $shell = New-Object -ComObject WScript.Shell
     foreach ($shortcut in $shortcuts) {
         Assert (Test-Path -LiteralPath $shortcut) 'Installer creates the current-user shortcut'
-        $shortcutTarget = $shell.CreateShortcut($shortcut).TargetPath
-        # Windows may report a short (8.3) alias on a different system locale.
+        $shortcutTarget = [InstallerShortcutReader]::Target($shortcut)
+        # Read the Unicode shell item ID list; WScript.Shell can expose a lossy
+        # ANSI path on an English system even when the actual shell link is valid.
         Assert (Test-Path -LiteralPath $shortcutTarget) ('Shortcut target exists: ' + $shortcutTarget + '; expected ' + $exe)
         $targetItem = Get-Item -LiteralPath $shortcutTarget
         Assert ($targetItem.Name -eq 'TodoDesk.exe' -and (Get-FileHash -LiteralPath $shortcutTarget).Hash -eq (Get-FileHash -LiteralPath $exe).Hash) ('Shortcut resolves to the verified installed executable: ' + $shortcutTarget)
