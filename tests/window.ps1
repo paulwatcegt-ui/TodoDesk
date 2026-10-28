@@ -65,7 +65,17 @@ try {
     $window.Height = 400
     Pump
     Assert ($window.ActualWidth -eq 400 -and $window.ActualHeight -eq 400 -and
-        $script:TaskScroll.ViewportHeight -gt 70 -and $script:HeroSubtitle.Visibility -eq 'Collapsed') 'The native window shrinks to 400x400 with a usable task list'
+        $script:TaskScroll.ViewportHeight -gt 70 -and $script:MainContent.Margin.Left -eq 16) 'The native window shrinks to 400x400 with a usable task list'
+    $script:NewTaskInput.Text = '焦点测试'
+    Add-TaskFromComposer
+    $context = $script:ActiveList.Children[0].Tag
+    Start-EditTask $context
+    $context.Editor.Text = '焦点测试已编辑'
+    Complete-Edit $context -ReturnFocus $true
+    Pump
+    Assert ($context.Check.IsKeyboardFocused -and $null -eq $context.Check.FocusVisualStyle) 'Editing returns keyboard focus without adding a second circle'
+    Assert (-not ([IO.File]::ReadAllText((Join-Path $root 'app\ui.xaml')) -match '把事情，一件件做好。|留一点空间，专注眼前的小事。')) 'Removed hero copy is absent from the interface'
+    $testDataExists = Test-Path $script:DataFilePath
     $script:MinimizeButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
     Pump
     Assert ($window.WindowState -eq 'Minimized') 'Minimize button minimizes the native window'
@@ -78,7 +88,7 @@ try {
     $chrome = [Windows.Shell.WindowChrome]::GetWindowChrome($window)
     Assert ($chrome.CaptionHeight -eq 48 -and $window.ResizeMode -eq 'CanResize') 'Native resize and caption behavior remain enabled'
     $script:CloseButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
-    Assert (-not $window.IsVisible -and -not (Test-Path $script:DataFilePath)) 'Close button closes without writing an unchanged empty list'
+    Assert (-not $window.IsVisible -and $testDataExists) 'Close button closes the saved test list'
     Write-Host 'All native window checks passed.'
 }
 finally {

@@ -40,6 +40,10 @@ if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
 }
 
 $required = @(
+    'tests\lifecycle.ps1',
+    'tests\features.ps1',
+    'tests\priorities.ps1',
+    'tests\reminder-entry.ps1',
     'tests\reminders.ps1',
     'tests\window.ps1',
     'preview.ps1',
@@ -66,6 +70,10 @@ foreach ($relative in $required) {
 }
 
 $powershellFiles = @(
+    'tests\lifecycle.ps1',
+    'tests\features.ps1',
+    'tests\priorities.ps1',
+    'tests\reminder-entry.ps1',
     'tests\reminders.ps1',
     'tests\window.ps1',
     'preview.ps1',
@@ -120,6 +128,7 @@ if ($null -ne $ui) {
         'FilterAll', 'FilterActive', 'FilterCompleted', 'TaskProgress', 'ProgressText',
         'EmptyTitle', 'EmptyDescription', 'StorageStatusText', 'StorageStatusDot', 'ListCountText',
         'MaximizeButton', 'MaximizeGlyph', 'CompletedToggleButton',
+        'ArchiveCompletedButton', 'TrashSettingsButton', 'ArchiveSettingsButton', 'LicenseInfoButton',
         'TitleBar', 'DateText', 'StatusPanel', 'StatusDot', 'StatusText',
         'Composer', 'NewTaskInput', 'ComposerPlaceholder', 'AddButton',
         'TaskScroll', 'ActiveList', 'CompletedSection', 'CompletedHeaderText',
@@ -165,7 +174,7 @@ foreach ($themeName in @('light', 'dark')) {
         $keys = @($dictionary.Keys)
         $missing = @($dynamicKeys | Where-Object { $_ -notin $keys })
         Assert-True ($missing.Count -eq 0) "theme keys complete: $themeName"
-        foreach ($pair in @(@('InkBrush','CardBrush'), @('SecondaryBrush','CardBrush'), @('TertiaryBrush','CardBrush'),
+        foreach ($pair in @(@('PriorityHighBrush','PriorityHighSurfaceBrush'), @('PriorityMediumBrush','PriorityMediumSurfaceBrush'), @('PriorityLowBrush','PriorityLowSurfaceBrush'), @('PriorityHighBrush','CardBrush'), @('PriorityMediumBrush','CardBrush'), @('PriorityLowBrush','CardBrush'), @('InkBrush','CardBrush'), @('SecondaryBrush','CardBrush'), @('TertiaryBrush','CardBrush'),
             @('CompletedTextBrush','CardBrush'), @('AccentBrush','AccentSoftBrush'), @('OnAccentBrush','AccentBrush'))) {
             $ratio = Get-Contrast $dictionary[$pair[0]].Color $dictionary[$pair[1]].Color
             Assert-True ($ratio -ge 4.5) ('text contrast {0}: {1}/{2} = {3:N2}' -f $themeName,$pair[0],$pair[1],$ratio)

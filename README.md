@@ -4,6 +4,10 @@
 
 原生 WPF 窗口，无账号、无云同步、无遥测。可直接从源码运行，也能构建成单个 `DaiBan.exe`。采用 [MIT 许可证](LICENSE)，欢迎使用、修改和贡献。
 
+项目维护：[宋培恩](https://github.com/paulwatcegt-ui)。问题反馈和改进建议请提交到本仓库 Issues。软件及其本地数据不包含遥测或云端同步。
+
+设置底部可查看完整 MIT 许可；单文件 EXE 内也嵌入许可证原文，保留既有版权与许可声明。
+
 | 浅色 | 深色 |
 | --- | --- |
 | ![浅色](docs/preview-light.png) | ![深色](docs/preview-dark.png) |
@@ -50,15 +54,31 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\preview.ps1 -Empt
 
 进度代表当前清单的完成比例，不是每日统计。不包含云同步或自动更新。
 
-## 时间提醒
+## 任务优先级
 
-点击任务右侧的时钟按钮，选择日期并输入 24 小时制时间（例如 `09:30`），即可设置提醒。再次点击可修改或取消。设置后，任务标题下方显示提醒时间。
+输入框右侧的“高 / 中 / 低”按钮用于选择新任务优先级。任务文字直接表达优先级：**高为红色、中为正常文字色（深色主题为白色）、低为绿色**。双击标题或点击编辑按钮后，可在编辑框旁修改优先级；平常不显示任务优先级标签。悬停标题可查看完整文字和优先级。旧清单默认使用“中”，无需迁移。修改支持撤销，任务原有顺序保持不变。
+
+设置中的“优先级”和“时间提醒”开关默认开启。关闭只隐藏入口并停用相应着色或提醒触发，不删除已有的优先级、提醒时间；重新开启即可恢复。提醒、编辑、删除按钮平时隐藏，悬停任务行或通过键盘聚焦时显示。
+
+编辑待办时，点击编辑框以外的地方会自动确认；Enter 确认、Esc 取消仍然可用。在编辑框内选择优先级不会因临时切换焦点而丢失正在输入的内容。
+
+## 时间提醒设置
+
+点击任务右侧的时钟按钮，可直接选择“10 分钟后 / 30 分钟后 / 1 小时后 / 明天 09:00”。也可以点击日期展开日历，分别填写时、分；支持加减按钮或键盘上下键微调。弹窗会预览实际提醒时间，过去或无效的时间不能保存。再次点击时钟可修改或移除，点击“取消”不改动已有提醒。设置后，任务标题下方显示提醒时间。
 
 应用运行或最小化时，每 10 秒检查一次，到点弹出独立窗口并播放系统提示音。已完成任务不提醒，同一次提醒不重复弹出。关闭应用期间不会运行后台服务，错过的提醒会在下次打开应用时补发。
 
 时间和已提醒标记保存在原本的 `todos.json` 中，作为可选字段加入；原有清单无需迁移。更改时间会重置已提醒状态。
 
+新增输入框中的“设置提醒”可先为新任务选择时间，添加时一并保存；添加后会清空暂存的提醒时间。
+
 ## 数据与快捷键
+
+新增框输入内容后，点击其他位置会自动添加；在输入框内选择优先级或设置提醒不会提前添加。Enter 和加号按钮仍然可用。
+
+删除单条任务、清除已完成任务会移入设置里的“回收站”，可以恢复；只有在回收站中选择“清空回收站”并明确确认后才永久删除。“归档”位于“清除”之前，可将已完成任务留作记录，随后从设置里的“归档记录”查看或恢复。归档和回收站不计入当前进度，也不触发提醒。
+
+当前任务仍在 `todos.json` 的 `items` 数组中，新增的 `archive` 和 `trash` 数组保存归档与回收站记录。全部内容在同一次原子写入中保存，恢复保留原完成状态、优先级和提醒。旧版文件缺少这两个数组时自动按空集合读取。
 
 正式数据默认在 `%APPDATA%\DaiBan`：`todos.json` 是待办，`settings.json` 是外观和保存位置。沿用原项目的数据格式和目录。预览数据独立保存。
 
@@ -85,6 +105,12 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\window.ps1
 
 # 提醒保存、触发、取消、最小化弹窗及紧凑文字检查
 powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\reminders.ps1
+
+# 使用实际应用启动路径检查弹窗按钮的作用域和保存行为
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\reminder-entry.ps1
+
+# 优先级、撤销、主题颜色与旧清单兼容性
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\priorities.ps1
 
 # 构建单文件：dist/native/DaiBan.exe
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\host\build.ps1
@@ -118,6 +144,12 @@ GitHub Actions 在推送 main 和 PR 时验证源码、运行交互检查并构�
 
 本轮优化的修改文件、验证结果与未验证项见 [界面优化验收记录](docs/UI-REFINEMENT.md)。
 
-## English
+## 署名与开源说明
+
+项目沿用 MIT 许可证，完整条款见 [LICENSE](LICENSE)；其要求在分发软件副本或实质部分时保留版权及许可声明。使用、修改和商业分发的具体条件以许可证正文为准，参阅 [MIT 说明](https://choosealicense.com/licenses/mit/)。请保留现有贡献者的版权声明；项目维护者署名与版权权利人声明是不同的信息。
+
+维护者可以使用自选公开昵称或 GitHub 名称，无需在界面公开真实姓名。README、设置中的维护者信息、LICENSE 和贡献指南共同构成项目的说明入口。后续引入第三方库、图标或字体时，再记录对应来源与许可证。
+
+## English quick start
 
 TodoDesk is a minimalist, local-first Windows 11 todo app. Clone this repo and double-click `preview.cmd` to try the real native app with isolated sample data. Use `start.cmd` for everyday use. Windows PowerShell 5.1 and .NET Framework 4.8 ship with Windows 11. Build a single executable with `host/build.ps1`. No accounts, network calls or telemetry. MIT licensed.

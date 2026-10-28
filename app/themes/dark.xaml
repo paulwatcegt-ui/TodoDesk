@@ -65,4 +65,11 @@
     <SolidColorBrush x:Key="SettingsButtonHoverBrush" Color="#3B465B" />
     <SolidColorBrush x:Key="SettingsButtonPressedBrush" Color="#48546E" />
     <SolidColorBrush x:Key="OnAccentBrush" Color="#202B47" />
+    <SolidColorBrush x:Key="PriorityHighBrush" Color="#FFADAB" />
+    <SolidColorBrush x:Key="PriorityMediumBrush" Color="#F0CC84" />
+    <SolidColorBrush x:Key="PriorityLowBrush" Color="#93D4C3" />
+    <SolidColorBrush x:Key="PriorityHighSurfaceBrush" Color="#553E4A" />
+    <SolidColorBrush x:Key="PriorityMediumSurfaceBrush" Color="#514B3C" />
+    <SolidColorBrush x:Key="PriorityLowSurfaceBrush" Color="#354F4E" />
+    <SolidColorBrush x:Key="MenuSurfaceBrush" Color="#292F3D" />
 </ResourceDictionary>

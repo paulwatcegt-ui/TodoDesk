@@ -40,6 +40,7 @@ internal static class Program
             ExtractResource("DaiBan.theme.light.xaml", Path.Combine(appRoot, "themes", "light.xaml"));
             ExtractResource("DaiBan.theme.dark.xaml", Path.Combine(appRoot, "themes", "dark.xaml"));
             ExtractResource("DaiBan.app.ico", Path.Combine(appRoot, "app.ico"));
+            ExtractResource("DaiBan.LICENSE", Path.Combine(appRoot, "LICENSE"));
 
             string script = ReadResourceText("DaiBan.App.ps1");
             Environment.SetEnvironmentVariable("DAIBAN_APP_ROOT", appRoot);

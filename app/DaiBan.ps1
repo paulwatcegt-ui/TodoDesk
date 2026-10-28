@@ -20,6 +20,8 @@ $script:AppRoot = if ($PSScriptRoot) {
 
 $script:AppVersion = '1.3.0'
 $script:TaskFilter = 'all'
+$script:ComposerPriorityValue = 'medium'
+$script:ComposerReminderDraft = [pscustomobject]@{ Title = '新待办'; RemindAt = $null; IsDraft = $true }
 $script:CompletedExpanded = $true
 $script:PersistenceState = 'empty'
 $script:TasksDirty = $false
@@ -38,6 +40,8 @@ $script:SettingsFilePath = Join-Path $script:ConfigDirectory 'settings.json'
 $script:DataDirectory = $script:DefaultDataDirectory
 $script:DataFilePath = Join-Path $script:DataDirectory 'todos.json'
 $script:Settings = @{
+    PriorityEnabled = $true
+    RemindersEnabled = $true
     Theme = 'system'
     DataDirectory = $null
 }
@@ -48,6 +52,8 @@ $script:ThemeWatchTimer = $null
 $script:SuppressThemeEvents = $false
 $script:ActiveTasks = New-Object System.Collections.ArrayList
 $script:CompletedTasks = New-Object System.Collections.ArrayList
+$script:ArchivedTasks = New-Object System.Collections.ArrayList
+$script:TrashedTasks = New-Object System.Collections.ArrayList
 $script:LoadError = $null
 $script:SettingsError = $null
 $script:SettingsReadError = $null
@@ -322,6 +328,8 @@ function Load-Tasks {
     $script:TasksDirty = $false
     $script:ActiveTasks.Clear()
     $script:CompletedTasks.Clear()
+    $script:ArchivedTasks.Clear()
+    $script:TrashedTasks.Clear()
 
     if (-not (Test-Path -LiteralPath $script:DataFilePath)) {
         return
@@ -340,7 +348,14 @@ function Load-Tasks {
         }
         $tasks = @()
 
-        foreach ($saved in @($state.items)) {
+        $groups = @(@{ Name = 'items'; Destination = $tasks }, @{ Name = 'archive' }, @{ Name = 'trash' })
+        foreach ($name in @('archive','trash')) {
+            if ($null -ne $state.PSObject.Properties[$name] -and $state.$name -isnot [System.Array]) { throw 'Invalid stored collection.' }
+        }
+        $seenIds = [System.Collections.Generic.HashSet[string]]::new()
+        foreach ($group in $groups) {
+        foreach ($saved in @($state.($group.Name))) {
+            if ($null -eq $saved -and $group.Name -ne 'items') { continue }
             if ($null -eq $saved -or $saved.title -isnot [string] -or
                 $saved.completed -isnot [bool]) {
                 throw 'Invalid task record. The original file has been preserved.'
@@ -354,6 +369,7 @@ function Load-Tasks {
                 $id = [guid]::NewGuid().ToString('N')
             }
 
+            if (-not $seenIds.Add($id)) { throw 'Duplicate task ID. The original file has been preserved.' }
             $createdAt = Get-Date
             if ($null -ne $saved.createdAt) {
                 $createdAt = ConvertFrom-UnixMilliseconds -Value ([long]$saved.createdAt)
@@ -372,9 +388,15 @@ function Load-Tasks {
                 CompletedAt = $completedAt
                 RemindAt = $(if ($null -ne $saved.remindAt) { ConvertFrom-UnixMilliseconds -Value ([long]$saved.remindAt) } else { $null })
                 ReminderNotified = [bool]$saved.reminderNotified
+                Priority = $(if ($saved.priority -in @('high','medium','low')) { [string]$saved.priority } else { 'medium' })
                 IsEditing = $false
             }
-            $tasks += $task
+            switch ($group.Name) {
+                'archive' { [void]$script:ArchivedTasks.Add($task) }
+                'trash' { [void]$script:TrashedTasks.Add($task) }
+                default { $tasks += $task }
+            }
+        }
         }
 
         $active = @($tasks | Where-Object { -not $_.IsCompleted } |
@@ -395,6 +417,309 @@ function Load-Tasks {
         $script:LoadError = $_.Exception.Message
         $script:ActiveTasks.Clear()
         $script:CompletedTasks.Clear()
+        $script:ArchivedTasks.Clear()
+        $script:TrashedTasks.Clear()
+    }
+}
+
+function Read-AppLicense {
+    $path = Join-Path $script:AppRoot 'LICENSE'
+    if (-not (Test-Path -LiteralPath $path)) { $path = Join-Path (Split-Path -Parent $script:AppRoot) 'LICENSE' }
+    return [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+}
+
+function Show-LicenseInformation {
+    $dialog = [System.Windows.Markup.XamlReader]::Parse(@'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="TodoDesk · 开源许可" Width="520" Height="440" MinWidth="360" MinHeight="300" WindowStartupLocation="CenterOwner" Background="{DynamicResource SettingsCardBrush}" Foreground="{DynamicResource InkBrush}" FontFamily="Segoe UI, Microsoft YaHei UI">
+ <Grid Margin="22"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <TextBlock Text="TodoDesk · MIT 开源许可" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,16"/>
+  <TextBox x:Name="LicenseText" Grid.Row="1" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Background="Transparent" Foreground="{DynamicResource InkBrush}" BorderThickness="0" FontSize="12"/>
+  <Button x:Name="CloseLicense" Grid.Row="2" IsCancel="True" Content="关闭" HorizontalAlignment="Right" Margin="0,16,0,0"/>
+ </Grid>
+</Window>
+'@)
+    [void]$dialog.Resources.MergedDictionaries.Add($script:ThemeDictionary)
+    $dialog.Owner = $script:Window
+    $dialog.FindName('LicenseText').Text = Read-AppLicense
+    $dialog.FindName('CloseLicense').Style = $script:Window.FindResource('SettingsButtonStyle')
+    [void]$dialog.ShowDialog()
+}
+
+function Test-InComposer {
+    param($Source)
+    $node = $Source
+    while ($null -ne $node) {
+        if ($node -eq $script:Composer) { return $true }
+        if ($node -is [System.Windows.Media.Visual]) { $node = [System.Windows.Media.VisualTreeHelper]::GetParent($node) }
+        else { $node = [System.Windows.LogicalTreeHelper]::GetParent($node) }
+    }
+    return $false
+}
+
+function Queue-ComposerConfirmation {
+    param([bool]$Force = $false)
+    if ([string]::IsNullOrWhiteSpace($script:NewTaskInput.Text)) { return }
+    if ($Force) { $script:ComposerConfirmForce = $true }
+    if ($script:ComposerConfirmQueued) { return }
+    $script:ComposerConfirmQueued = $true
+    [void]$script:Window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::ContextIdle, [Action]{
+        $force = $script:ComposerConfirmForce
+        $script:ComposerConfirmForce = $false
+        $script:ComposerConfirmQueued = $false
+        if (-not $script:ComposerReminderDialogOpen -and -not $script:ComposerPriority.ContextMenu.IsOpen -and
+            ($force -or -not $script:Composer.IsKeyboardFocusWithin) -and -not [string]::IsNullOrWhiteSpace($script:NewTaskInput.Text)) {
+            Add-TaskFromComposer -ReturnFocus $false
+        }
+    })
+}
+
+function ConvertTo-StoredTask {
+    param($Task)
+    return [pscustomobject][ordered]@{
+        id = $Task.Id; title = $Task.Title; completed = [bool]$Task.IsCompleted
+        createdAt = Get-UnixMilliseconds $Task.CreatedAt
+        completedAt = $(if ($null -ne $Task.CompletedAt) { Get-UnixMilliseconds $Task.CompletedAt } else { $null })
+        remindAt = $(if ($null -ne $Task.RemindAt) { Get-UnixMilliseconds $Task.RemindAt } else { $null })
+        reminderNotified = [bool]$Task.ReminderNotified; priority = Get-TaskPriority $Task
+    }
+}
+
+function Remove-StoredTask {
+    param($Tasks, [string]$Id)
+    $index = Find-TaskIndex $Tasks $Id
+    if ($index -ge 0) { $Tasks.RemoveAt($index) }
+}
+
+function Update-StoredCounts {
+    if (-not $script:UiReady) { return }
+    $script:TrashSettingsButton.Content = '回收站  ·  ' + $script:TrashedTasks.Count
+    $script:ArchiveSettingsButton.Content = '归档记录  ·  ' + $script:ArchivedTasks.Count
+}
+
+function Archive-Completed {
+    if ($null -ne $script:LoadError -or $script:CompletedTasks.Count -eq 0) { return }
+    Commit-ActiveEdit
+    $items = @($script:CompletedTasks)
+    foreach ($task in $items) { $script:ArchivedTasks.Insert(0, $task) }
+    $script:CompletedTasks.Clear()
+    Save-Tasks
+    Refresh-TaskList
+    $script:UndoPayload = @{ Kind = 'archive'; Items = $items }
+    Show-Toast -Message ('已归档 {0} 项，可在设置中查看' -f $items.Count) -CanUndo $true
+}
+
+function Restore-StoredTask {
+    param($Task, [ValidateSet('trash','archive')][string]$Mode)
+    if ($null -ne $script:LoadError) { return }
+    $stored = $script:TrashedTasks
+    if ($Mode -eq 'archive') { $stored = $script:ArchivedTasks }
+    if ((Find-TaskIndex $stored $Task.Id) -lt 0 -or (Test-TaskIdInList $script:ActiveTasks $Task.Id) -or (Test-TaskIdInList $script:CompletedTasks $Task.Id)) { return }
+    Remove-StoredTask $stored $Task.Id
+    if ($Task.IsCompleted) { $script:CompletedTasks.Insert(0, $Task) } else { $script:ActiveTasks.Insert(0, $Task) }
+    Save-Tasks
+    Refresh-TaskList
+}
+
+function Refresh-StoredTasksDialog {
+    param($Dialog)
+    $ctx = $Dialog.Tag
+    $list = $script:TrashedTasks
+    if ($ctx.Mode -eq 'archive') { $list = $script:ArchivedTasks }
+    $ctx.List.Children.Clear()
+    $ctx.Count.Text = '共 {0} 项' -f $list.Count
+    $ctx.Empty.Visibility = if ($list.Count -eq 0) { 'Visible' } else { 'Collapsed' }
+    foreach ($task in @($list)) {
+        $card = [System.Windows.Controls.Border]::new()
+        $card.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'CardBrush')
+        $card.CornerRadius = [System.Windows.CornerRadius]::new(8)
+        $card.Padding = [System.Windows.Thickness]::new(12)
+        $card.Margin = [System.Windows.Thickness]::new(0,0,0,8)
+        $dock = [System.Windows.Controls.DockPanel]::new()
+        $button = [System.Windows.Controls.Button]::new()
+        $button.Content = '恢复'; $button.Style = $script:Window.FindResource('SettingsButtonStyle')
+        $button.Margin = [System.Windows.Thickness]::new(12,0,0,0)
+        $button.IsEnabled = $null -eq $script:LoadError
+        $button.Tag = @{ Dialog = $Dialog; Task = $task; Mode = $ctx.Mode }
+        $button.Add_Click({
+            param($sender,$eventArgs)
+            Restore-StoredTask $sender.Tag.Task $sender.Tag.Mode
+            Refresh-StoredTasksDialog $sender.Tag.Dialog
+        })
+        [System.Windows.Controls.DockPanel]::SetDock($button,'Right')
+        [void]$dock.Children.Add($button)
+        $text = [System.Windows.Controls.TextBlock]::new()
+        $text.Text = $task.Title + [Environment]::NewLine + $(if ($task.IsCompleted) { '已完成' } else { '待办' })
+        $text.TextWrapping = 'Wrap'; $text.FontSize = 13
+        $text.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'InkBrush')
+        [void]$dock.Children.Add($text)
+        $card.Child = $dock; [void]$ctx.List.Children.Add($card)
+    }
+    $ctx.Clear.IsEnabled = $list.Count -gt 0 -and $null -eq $script:LoadError
+    $ctx.Error.Text = if ($script:TasksDirty) { '更改尚未保存，请检查保存位置。' } else { '' }
+}
+
+function Open-StoredTasksDialog {
+    param([ValidateSet('trash','archive')][string]$Mode)
+    $dialog = [System.Windows.Markup.XamlReader]::Parse(@'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Width="420" Height="440" MinWidth="360" MinHeight="320" WindowStartupLocation="CenterOwner" Background="{DynamicResource SettingsCardBrush}" Foreground="{DynamicResource InkBrush}" FontFamily="Microsoft YaHei UI, Segoe UI">
+ <Grid Margin="22"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <StackPanel><TextBlock x:Name="StoredTitle" FontSize="21" FontWeight="SemiBold"/><TextBlock x:Name="StoredDescription" TextWrapping="Wrap" FontSize="12" Margin="0,10,0,16" Foreground="{DynamicResource SecondaryBrush}"/></StackPanel>
+  <Grid Grid.Row="1"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel x:Name="StoredList"/></ScrollViewer><TextBlock x:Name="StoredEmpty" Text="这里还没有记录" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryBrush}"/></Grid>
+  <StackPanel Grid.Row="2" Margin="0,12,0,0"><TextBlock x:Name="StoredError" TextWrapping="Wrap" Foreground="{DynamicResource DangerBrush}"/><Grid Margin="0,8,0,0"><TextBlock x:Name="StoredCount" VerticalAlignment="Center" Foreground="{DynamicResource SecondaryBrush}"/><Button x:Name="EmptyTrash" Content="清空回收站" HorizontalAlignment="Right"/></Grid></StackPanel>
+ </Grid>
+</Window>
+'@)
+    [void]$dialog.Resources.MergedDictionaries.Add($script:ThemeDictionary)
+    $dialog.Owner = $script:Window
+    $dialog.Title = if ($Mode -eq 'trash') { '回收站' } else { '归档记录' }
+    $dialog.FindName('StoredTitle').Text = $dialog.Title
+    $dialog.FindName('StoredDescription').Text = if ($Mode -eq 'trash') { '删除和清除的任务保存在这里，可恢复原来的状态。' } else { '已归档的完成记录，不计入当前清单进度。' }
+    $dialog.Tag = @{ Mode = $Mode; List = $dialog.FindName('StoredList'); Count = $dialog.FindName('StoredCount'); Empty = $dialog.FindName('StoredEmpty'); Error = $dialog.FindName('StoredError'); Clear = $dialog.FindName('EmptyTrash') }
+    $dialog.Tag.Clear.Style = $script:Window.FindResource('SettingsButtonStyle')
+    $dialog.Tag.Clear.Visibility = if ($Mode -eq 'trash') { 'Visible' } else { 'Collapsed' }
+    $dialog.Tag.Clear.Tag = $dialog
+    $dialog.Tag.Clear.Add_Click({
+        param($sender,$eventArgs)
+        $dialog = $sender.Tag
+        $answer = [System.Windows.MessageBox]::Show($dialog,'永久删除回收站中的所有任务？此操作无法撤销。','清空回收站','YesNo','Warning','No')
+        if ($answer -eq 'Yes' -and $null -eq $script:LoadError) {
+            $script:TrashedTasks.Clear(); $script:UndoPayload = $null
+            Save-Tasks; Refresh-TaskList; Refresh-StoredTasksDialog $dialog
+        }
+    })
+    Refresh-StoredTasksDialog $dialog
+    [void]$dialog.ShowDialog()
+}
+
+function Get-TaskTitleBrush {
+    param($Task)
+    if ($script:Settings.PriorityEnabled -ne $false) {
+        switch (Get-TaskPriority $Task) { 'high' { return 'PriorityHighBrush' }; 'low' { return 'PriorityLowBrush' } }
+        return 'InkBrush'
+    }
+    if ($Task.IsCompleted) { return 'CompletedTextBrush' }
+    return 'InkBrush'
+}
+
+function Update-ComposerFeatures {
+    if (-not $script:UiReady) { return }
+    $script:ComposerPriority.Visibility = if ($script:Settings.PriorityEnabled -ne $false) { 'Visible' } else { 'Collapsed' }
+    $script:ComposerReminderButton.Visibility = if ($script:Settings.RemindersEnabled -ne $false) { 'Visible' } else { 'Collapsed' }
+    $when = $script:ComposerReminderDraft.RemindAt
+    $script:ComposerReminderButton.Content = if ($null -ne $when) { $when.ToString('HH:mm') + ' 提醒' } else { '设置提醒' }
+    $script:ComposerReminderButton.ToolTip = if ($null -ne $when) { $when.ToString('yyyy-MM-dd HH:mm') + '，添加任务时一并保存' } else { '为新待办预先设置提醒时间' }
+}
+
+function Update-FeaturePreferences {
+    if ($script:SuppressFeatureEvents) { return }
+    Commit-ActiveEdit
+    $script:Settings.PriorityEnabled = [bool]$script:PriorityFeatureToggle.IsChecked
+    $script:Settings.RemindersEnabled = [bool]$script:RemindersFeatureToggle.IsChecked
+    Save-Settings
+    Update-ComposerFeatures
+    Refresh-TaskList
+}
+
+function Confirm-EditOutside {
+    param($Source)
+    $ctx = $script:EditingContext
+    if ($null -eq $ctx) { return }
+    $node = $Source
+    while ($null -ne $node) {
+        if ($node -eq $ctx.EditHost) { return }
+        if ($node -is [System.Windows.Media.Visual]) { $node = [System.Windows.Media.VisualTreeHelper]::GetParent($node) }
+        else { $node = [System.Windows.LogicalTreeHelper]::GetParent($node) }
+    }
+    Commit-ActiveEdit
+}
+
+function Get-TaskPriority {
+    param($Task)
+    if ($null -ne $Task -and $Task.Priority -in @('high','medium','low')) { return [string]$Task.Priority }
+    return 'medium'
+}
+
+function Get-PriorityInfo {
+    param([string]$Priority)
+    switch ($Priority) {
+        'high' { return @{ Label = '高'; Brush = 'PriorityHighBrush' } }
+        'low' { return @{ Label = '低'; Brush = 'PriorityLowBrush' } }
+        default { return @{ Label = '中'; Brush = 'PriorityMediumBrush' } }
+    }
+}
+
+function Set-TaskPriority {
+    param($Task, [string]$Priority)
+    if ($null -ne $script:LoadError -or $null -eq $Task) { return }
+    if ($Priority -notin @('high','medium','low')) { throw 'Invalid priority.' }
+    Commit-ActiveEdit
+    $oldPriority = Get-TaskPriority $Task
+    if ($oldPriority -eq $Priority) { return }
+    $Task | Add-Member -NotePropertyName Priority -NotePropertyValue $Priority -Force
+    Save-Tasks
+    Refresh-TaskList
+    $script:UndoPayload = @{ Kind = 'priority'; Task = $Task; Priority = $oldPriority }
+    Show-Toast -Message $(if ($script:LastTasksSaveSucceeded) { '优先级已更新' } else { '优先级尚未保存，请保留窗口' }) -CanUndo $true
+}
+
+function Initialize-PriorityButton {
+    param($Button, $Task)
+    $priority = if ($null -eq $Task) { $script:ComposerPriorityValue } else { Get-TaskPriority $Task }
+    $info = Get-PriorityInfo $priority
+    $Button.Style = $script:Window.FindResource('PriorityBadgeStyle')
+    $Button.SetResourceReference([System.Windows.Controls.Control]::BackgroundProperty, $info.Brush.Replace('Brush','SurfaceBrush'))
+    $Button.Content = $info.Label
+    $Button.FontWeight = 'SemiBold'
+    $Button.SetResourceReference([System.Windows.Controls.Control]::ForegroundProperty, $info.Brush)
+    $Button.ToolTip = $(if ($null -eq $Task) { '新任务' } else { '任务' }) + '优先级：' + $info.Label + '（点击选择）'
+    [System.Windows.Automation.AutomationProperties]::SetName($Button, $Button.ToolTip)
+    $menu = [System.Windows.Controls.ContextMenu]::new()
+    $menu.Style = $script:Window.FindResource('PriorityMenuStyle')
+    $menu.MinWidth = 188
+    $menu.Placement = 'Bottom'
+    $menu.HorizontalOffset = -8
+    $menu.VerticalOffset = 2
+    $menu.Padding = [System.Windows.Thickness]::new(4)
+    $menu.SetResourceReference([System.Windows.Controls.Control]::BorderBrushProperty, 'HairlineBrush')
+    $menu.Tag = @{ Task = $Task; Button = $Button }
+    $menu.SetResourceReference([System.Windows.Controls.Control]::BackgroundProperty, 'SettingsCardBrush')
+    $menu.Add_Opened({
+        param($sender,$eventArgs)
+        $sender.Resources.MergedDictionaries.Clear()
+        [void]$sender.Resources.MergedDictionaries.Add($script:ThemeDictionary)
+        foreach ($item in $sender.Items) {
+            $tag = $item.Tag.Clone()
+            $tag.Color = $script:Window.FindResource((Get-PriorityInfo $tag.Priority).Brush)
+            $item.Tag = $tag
+        }
+    })
+    foreach ($value in @('high','medium','low')) {
+        $entry = Get-PriorityInfo $value
+        $item = [System.Windows.Controls.MenuItem]::new()
+        $item.Style = $script:Window.FindResource('PriorityMenuItemStyle')
+        $item.Header = $entry.Label + '优先级'
+        $item.IsCheckable = $true
+        $item.IsChecked = $value -eq $priority
+        $item.SetResourceReference([System.Windows.Controls.Control]::ForegroundProperty, 'InkBrush')
+        $item.Tag = @{ Task = $Task; Priority = $value; Button = $Button; Color = $script:Window.FindResource($entry.Brush) }
+        $item.Add_Click({
+            param($sender,$eventArgs)
+            $selection = $sender.Tag
+            if ($null -eq $selection.Task) {
+                $script:ComposerPriorityValue = $selection.Priority
+                Initialize-PriorityButton -Button $selection.Button -Task $null
+            } else { Set-TaskPriority -Task $selection.Task -Priority $selection.Priority }
+        })
+        [void]$menu.Items.Add($item)
+    }
+    $Button.ContextMenu = $menu
+    if ($Button.Tag -ne 'PriorityPickerInitialized') {
+        $Button.Tag = 'PriorityPickerInitialized'
+        $Button.Add_Click({
+            param($sender,$eventArgs)
+            $sender.ContextMenu.PlacementTarget = $sender
+            $sender.ContextMenu.IsOpen = $true
+        })
     }
 }
 
@@ -404,11 +729,66 @@ function Set-TaskReminder {
     if ($null -ne $At -and ($At -le (Get-Date) -or [TimeZoneInfo]::Local.IsInvalidTime($At))) {
         throw '请选择有效的未来日期和时间。'
     }
+    if ($Task.IsDraft) {
+        $Task.RemindAt = $At
+        Update-ComposerFeatures
+        return $true
+    }
     $Task | Add-Member -NotePropertyName RemindAt -NotePropertyValue $At -Force
     $Task | Add-Member -NotePropertyName ReminderNotified -NotePropertyValue $false -Force
     Save-Tasks
     Refresh-TaskList
     return $script:LastTasksSaveSucceeded
+}
+
+function Get-ReminderSelection {
+    param($Dialog)
+    $ctx = $Dialog.Tag
+    if ($null -eq $ctx.Date.SelectedDate) { throw '请选择提醒日期。' }
+    $hour = 0; $minute = 0
+    if (-not [int]::TryParse($ctx.Hour.Text.Trim(), [ref]$hour) -or $hour -lt 0 -or $hour -gt 23) { throw '小时请填写 00–23。' }
+    if (-not [int]::TryParse($ctx.Minute.Text.Trim(), [ref]$minute) -or $minute -lt 0 -or $minute -gt 59) { throw '分钟请填写 00–59。' }
+    return $ctx.Date.SelectedDate.Date.AddHours($hour).AddMinutes($minute)
+}
+
+function Update-ReminderSummary {
+    param($Dialog)
+    if ($null -eq $Dialog -or $null -eq $Dialog.Tag) { return }
+    $ctx = $Dialog.Tag
+    $ctx.Error.Text = ''
+    try {
+        $at = Get-ReminderSelection $Dialog
+        $dateLabel = if ($at.Date -eq (Get-Date).Date) { '今天' } elseif ($at.Date -eq (Get-Date).Date.AddDays(1)) { '明天' } else { $at.ToString('yyyy年M月d日') }
+        $ctx.DateButton.Content = $dateLabel + '  ' + $at.ToString('M月d日') + '  ▾'
+        if ($at -le (Get-Date) -or [TimeZoneInfo]::Local.IsInvalidTime($at)) { throw '这个时间已经过去或无效，请选择未来的时间。' }
+        $minutes = [Math]::Ceiling(($at - (Get-Date)).TotalMinutes)
+        $relative = if ($minutes -lt 60) { '约 {0} 分钟后' -f $minutes } elseif ($minutes -lt 1440) { '约 {0} 小时后' -f [Math]::Round($minutes/60,1) } else { '约 {0} 天后' -f [Math]::Round($minutes/1440,1) }
+        $ctx.Summary.Text = '将在{0} {1} 提醒你（{2}）' -f $dateLabel,$at.ToString('HH:mm'),$relative
+        $ctx.Save.IsEnabled = $true
+    } catch {
+        $ctx.Summary.Text = $_.Exception.Message
+        $ctx.Save.IsEnabled = $false
+    }
+}
+
+function Set-ReminderPreset {
+    param($Dialog, [int]$Minutes)
+    $at = if ($Minutes -eq -1) { (Get-Date).Date.AddDays(1).AddHours(9) } else { (Get-Date).AddMinutes($Minutes) }
+    $ctx = $Dialog.Tag
+    $ctx.Date.SelectedDate = $at.Date
+    $ctx.Hour.Text = $at.ToString('HH')
+    $ctx.Minute.Text = $at.ToString('mm')
+    Update-ReminderSummary $Dialog
+}
+
+function Step-ReminderTime {
+    param($Dialog, [string]$Field, [int]$Delta)
+    $inputBox = $Dialog.Tag[$Field]
+    $value = 0
+    [void][int]::TryParse($inputBox.Text, [ref]$value)
+    $limit = if ($Field -eq 'Hour') { 24 } else { 60 }
+    $inputBox.Text = (($value + $Delta + $limit) % $limit).ToString('00')
+    Update-ReminderSummary $Dialog
 }
 
 function Open-ReminderDialog {
@@ -417,59 +797,117 @@ function Open-ReminderDialog {
     Commit-ActiveEdit
     $dialog = [System.Windows.Markup.XamlReader]::Parse(@'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="时间提醒" Width="360" SizeToContent="Height" ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
+ Title="时间提醒" Width="376" SizeToContent="Height" MaxHeight="620" ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
  Background="{DynamicResource SettingsCardBrush}" Foreground="{DynamicResource InkBrush}" FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="13">
+ <ScrollViewer Background="{DynamicResource SettingsCardBrush}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
  <StackPanel Margin="22">
-  <TextBlock Text="设置时间提醒" FontSize="20" FontWeight="SemiBold"/>
-  <TextBlock x:Name="ReminderTaskTitle" Margin="0,10,0,16" TextWrapping="Wrap" MaxHeight="48" TextTrimming="CharacterEllipsis"/>
-  <Grid>
-   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="90"/></Grid.ColumnDefinitions>
-   <StackPanel Margin="0,0,12,0"><TextBlock Text="日期" Margin="0,0,0,6"/><DatePicker x:Name="ReminderDate" Height="30"/></StackPanel>
-   <StackPanel Grid.Column="1"><TextBlock Text="时间（24小时）" Margin="0,0,0,6"/><TextBox x:Name="ReminderTime" Height="30" Padding="6,3" MaxLength="5" Background="{DynamicResource SettingsFieldBrush}" Foreground="{DynamicResource InkBrush}" CaretBrush="{DynamicResource AccentBrush}" BorderBrush="{DynamicResource SettingsFieldBorderBrush}"/></StackPanel>
+  <TextBlock Text="什么时候提醒你？" FontSize="21" FontWeight="SemiBold"/>
+  <TextBlock x:Name="ReminderTaskTitle" Foreground="{DynamicResource SecondaryBrush}" Margin="0,9,0,18" TextWrapping="Wrap" MaxHeight="42" TextTrimming="CharacterEllipsis"/>
+  <UniformGrid Columns="2">
+   <Button x:Name="Preset10" Content="10 分钟后" Margin="0,0,6,8"/>
+   <Button x:Name="Preset30" Content="30 分钟后" Margin="6,0,0,8"/>
+   <Button x:Name="Preset60" Content="1 小时后" Margin="0,0,6,0"/>
+   <Button x:Name="PresetTomorrow" Content="明天 09:00" Margin="6,0,0,0"/>
+  </UniformGrid>
+  <TextBlock Text="或自定义日期和时间" Margin="0,20,0,9" Foreground="{DynamicResource SecondaryBrush}" FontSize="12"/>
+  <Button x:Name="ReminderDateButton" HorizontalContentAlignment="Left"/>
+  <Popup x:Name="ReminderCalendarPopup" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+   <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"><Calendar x:Name="ReminderDate"/></Border>
+  </Popup>
+  <Grid Margin="0,12,0,0">
+   <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="26"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+   <Border Background="{DynamicResource SettingsFieldBrush}" BorderBrush="{DynamicResource SettingsFieldBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="8,4">
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/></Grid.ColumnDefinitions>
+     <StackPanel><TextBlock Text="时 · 00–23" FontSize="11" Foreground="{DynamicResource SecondaryBrush}"/><TextBox x:Name="ReminderHour" FontSize="22" MaxLength="2" Background="Transparent" BorderThickness="0" Padding="0" Foreground="{DynamicResource InkBrush}" CaretBrush="{DynamicResource AccentBrush}"/></StackPanel>
+     <StackPanel Grid.Column="1" VerticalAlignment="Center"><Button x:Name="HourUp" Content="+"/><Button x:Name="HourDown" Content="−"/></StackPanel>
+    </Grid>
+   </Border>
+   <TextBlock Grid.Column="1" Text=":" FontSize="24" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+   <Border Grid.Column="2" Background="{DynamicResource SettingsFieldBrush}" BorderBrush="{DynamicResource SettingsFieldBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="8,4">
+    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="24"/></Grid.ColumnDefinitions>
+     <StackPanel><TextBlock Text="分 · 00–59" FontSize="11" Foreground="{DynamicResource SecondaryBrush}"/><TextBox x:Name="ReminderMinute" FontSize="22" MaxLength="2" Background="Transparent" BorderThickness="0" Padding="0" Foreground="{DynamicResource InkBrush}" CaretBrush="{DynamicResource AccentBrush}"/></StackPanel>
+     <StackPanel Grid.Column="1" VerticalAlignment="Center"><Button x:Name="MinuteUp" Content="+"/><Button x:Name="MinuteDown" Content="−"/></StackPanel>
+    </Grid>
+   </Border>
   </Grid>
-  <TextBlock Margin="0,12,0,0" Text="应用运行时提醒，最小化也有效。关闭期间错过的提醒将在下次打开时补发。" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryBrush}" FontSize="12"/>
+  <Border Background="{DynamicResource AccentSoftBrush}" CornerRadius="8" Padding="10" Margin="0,14,0,0"><TextBlock x:Name="ReminderSummary" Foreground="{DynamicResource AccentBrush}" TextWrapping="Wrap" FontSize="12"/></Border>
+  <TextBlock Margin="0,12,0,0" Text="应用打开时提醒，最小化也有效。关闭期间错过的提醒，会在下次打开时补发。" TextWrapping="Wrap" Foreground="{DynamicResource SecondaryBrush}" FontSize="11.5"/>
   <TextBlock x:Name="ReminderError" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="{DynamicResource DangerBrush}"/>
-  <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-   <Button x:Name="RemoveReminder" Content="取消提醒" Margin="0,0,8,0"/>
-   <Button x:Name="SaveReminder" Content="保存" IsDefault="True"/>
-  </StackPanel>
+  <Grid Margin="0,14,0,0">
+   <Button x:Name="RemoveReminder" Content="移除提醒" HorizontalAlignment="Left"/>
+   <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button x:Name="CancelReminder" Content="取消" IsCancel="True" Margin="0,0,8,0"/><Button x:Name="SaveReminder" Content="设定提醒" IsDefault="True"/></StackPanel>
+  </Grid>
  </StackPanel>
+ </ScrollViewer>
 </Window>
 '@)
     [void]$dialog.Resources.MergedDictionaries.Add($script:ThemeDictionary)
     $dialog.Owner = $script:Window
+    $dialog.MaxHeight = [Math]::Min(620, [System.Windows.SystemParameters]::WorkArea.Height - 32)
     $dialog.FindName('ReminderTaskTitle').Text = $Task.Title
-    $when = if ($null -ne $Task.RemindAt) { $Task.RemindAt } else { (Get-Date).AddHours(1) }
-    $date = $dialog.FindName('ReminderDate')
-    $time = $dialog.FindName('ReminderTime')
-    $errorText = $dialog.FindName('ReminderError')
-    $date.SelectedDate = $when.Date
-    $time.Text = $when.ToString('HH:mm')
-    foreach ($name in @('SaveReminder','RemoveReminder')) { $dialog.FindName($name).Style = $script:Window.FindResource('SettingsButtonStyle') }
-    $dialog.FindName('RemoveReminder').IsEnabled = $null -ne $Task.RemindAt
-    $dialog.FindName('SaveReminder').Add_Click({
+    $ctx = @{ Task = $Task; Date = $dialog.FindName('ReminderDate'); Hour = $dialog.FindName('ReminderHour'); Minute = $dialog.FindName('ReminderMinute');
+        DateButton = $dialog.FindName('ReminderDateButton'); Popup = $dialog.FindName('ReminderCalendarPopup'); Summary = $dialog.FindName('ReminderSummary'); Error = $dialog.FindName('ReminderError'); Save = $dialog.FindName('SaveReminder') }
+    $dialog.Tag = $ctx
+    $ctx.Popup.PlacementTarget = $ctx.DateButton
+    $ctx.Date.DisplayDateStart = (Get-Date).Date
+    $when = if ($null -ne $Task.RemindAt) { $Task.RemindAt } else { (Get-Date).AddMinutes(30) }
+    $ctx.Date.SelectedDate = $when.Date
+    $ctx.Date.DisplayDate = $when.Date
+    $ctx.Hour.Text = $when.ToString('HH')
+    $ctx.Minute.Text = $when.ToString('mm')
+    foreach ($name in @('SaveReminder','RemoveReminder','CancelReminder','ReminderDateButton','Preset10','Preset30','Preset60','PresetTomorrow')) {
+        $button = $dialog.FindName($name)
+        $button.Style = $script:Window.FindResource('SettingsButtonStyle')
+        $button.Height = 36
+        $button.Tag = $dialog
+    }
+    $ctx.Save.BorderBrush = $script:Window.FindResource('AccentBrush')
+    $dialog.FindName('RemoveReminder').Visibility = if ($null -ne $Task.RemindAt) { 'Visible' } else { 'Collapsed' }
+    foreach ($preset in @(@('Preset10',10),@('Preset30',30),@('Preset60',60),@('PresetTomorrow',-1))) {
+        $button = $dialog.FindName($preset[0]); $button.Tag = @{ Dialog = $dialog; Minutes = $preset[1] }
+        $button.Add_Click({ param($sender,$eventArgs); Set-ReminderPreset -Dialog $sender.Tag.Dialog -Minutes $sender.Tag.Minutes })
+    }
+    foreach ($step in @(@('HourUp','Hour',1),@('HourDown','Hour',-1),@('MinuteUp','Minute',1),@('MinuteDown','Minute',-1))) {
+        $button = $dialog.FindName($step[0]); $button.Style = $script:Window.FindResource('QuietTextButtonStyle'); $button.Height = 21
+        [System.Windows.Automation.AutomationProperties]::SetName($button,
+            ($(if ($step[1] -eq 'Hour') { '小时' } else { '分钟' }) + $(if ($step[2] -gt 0) { '增加一' } else { '减少一' })))
+        $button.Tag = @{ Dialog = $dialog; Field = $step[1]; Delta = $step[2] }
+        $button.Add_Click({ param($sender,$eventArgs); Step-ReminderTime $sender.Tag.Dialog $sender.Tag.Field $sender.Tag.Delta })
+    }
+    foreach ($field in @('Hour','Minute')) {
+        $inputBox = $ctx[$field]; $inputBox.Tag = @{ Dialog = $dialog; Field = $field }
+        $inputBox.Add_TextChanged({ param($sender,$eventArgs); Update-ReminderSummary $sender.Tag.Dialog })
+        $inputBox.Add_PreviewKeyDown({
+            param($sender,$eventArgs)
+            if ($eventArgs.Key -in @('Up','Down')) { Step-ReminderTime $sender.Tag.Dialog $sender.Tag.Field $(if ($eventArgs.Key -eq 'Up') { 1 } else { -1 }); $eventArgs.Handled = $true }
+        })
+    }
+    $ctx.DateButton.Add_Click({ param($sender,$eventArgs); $sender.Tag.Tag.Popup.IsOpen = $true })
+    $ctx.Date.Tag = $dialog
+    $ctx.Date.Add_SelectedDatesChanged({ param($sender,$eventArgs); $sender.Tag.Tag.Popup.IsOpen = $false; Update-ReminderSummary $sender.Tag })
+    # Keep event handlers in the application's session state. GetNewClosure creates a
+    # dynamic module that cannot resolve script-local commands when launched normally.
+    $ctx.Save.Add_Click({
+        param($sender,$eventArgs)
+        $dialog = $sender.Tag; $ctx = $dialog.Tag
         try {
-            if ($null -eq $date.SelectedDate) { throw '请选择日期。' }
-            $clock = [datetime]::MinValue
-            if (-not [datetime]::TryParseExact($time.Text.Trim(), 'HH:mm', [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None, [ref]$clock)) {
-                throw '时间格式应为 HH:mm，例如 09:30。'
-            }
-            $saved = Set-TaskReminder -Task $Task -At ($date.SelectedDate.Date.Add($clock.TimeOfDay))
-            if (-not $saved) { throw '提醒尚未保存，请检查保存位置后重试。' }
-            $dialog.Close()
-        }
-        catch { $errorText.Text = $_.Exception.Message }
-    }.GetNewClosure())
+            $at = Get-ReminderSelection $dialog
+            if (Set-TaskReminder -Task $ctx.Task -At $at) { $dialog.Close() } else { $ctx.Error.Text = '提醒尚未保存，请检查保存位置后重试。' }
+        } catch { $ctx.Error.Text = '无法设定提醒，请检查日期和时间后重试。' }
+    })
     $dialog.FindName('RemoveReminder').Add_Click({
-        $saved = Set-TaskReminder -Task $Task -At $null
-        if ($saved) { $dialog.Close() } else { $errorText.Text = '取消提醒尚未保存，请重试。' }
-    }.GetNewClosure())
+        param($sender,$eventArgs)
+        $dialog = $sender.Tag
+        if (Set-TaskReminder -Task $dialog.Tag.Task -At $null) { $dialog.Close() } else { $dialog.Tag.Error.Text = '移除提醒尚未保存，请重试。' }
+    })
     $dialog.Add_PreviewKeyDown({ param($sender,$eventArgs); if ($eventArgs.Key -eq 'Escape') { $sender.Close() } })
+    Update-ReminderSummary $dialog
     [void]$dialog.ShowDialog()
 }
 
 function Get-DueReminders {
     param([datetime]$Now = (Get-Date))
+    if ($script:Settings.RemindersEnabled -eq $false) { return @() }
     return @($script:ActiveTasks | Where-Object { $null -ne $_.RemindAt -and -not $_.ReminderNotified -and $_.RemindAt -le $Now })
 }
 
@@ -520,6 +958,7 @@ function Update-StorageStatus {
     $script:ActiveList.IsEnabled = $canEdit
     $script:CompletedList.IsEnabled = $canEdit
     $script:ClearCompletedButton.IsEnabled = $canEdit
+    $script:ArchiveCompletedButton.IsEnabled = $canEdit
     $script:ChangeDataFolderButton.IsEnabled = $canEdit -and $null -eq $script:SettingsReadError
     $script:ResetDataFolderButton.IsEnabled = $canEdit -and $null -eq $script:SettingsReadError -and -not (
         Test-SameFolder -First $script:DataDirectory -Second $script:DefaultDataDirectory)
@@ -546,6 +985,7 @@ function Save-Tasks {
                 title = $task.Title
                 remindAt = $(if ($null -ne $task.RemindAt) { Get-UnixMilliseconds -Value $task.RemindAt } else { $null })
                 reminderNotified = [bool]$task.ReminderNotified
+                priority = Get-TaskPriority $task
                 completed = $false
                 createdAt = Get-UnixMilliseconds -Value $task.CreatedAt
                 completedAt = $null
@@ -561,6 +1001,7 @@ function Save-Tasks {
                 title = $task.Title
                 remindAt = $(if ($null -ne $task.RemindAt) { Get-UnixMilliseconds -Value $task.RemindAt } else { $null })
                 reminderNotified = [bool]$task.ReminderNotified
+                priority = Get-TaskPriority $task
                 completed = $true
                 createdAt = Get-UnixMilliseconds -Value $task.CreatedAt
                 completedAt = Get-UnixMilliseconds -Value $completedAt
@@ -570,6 +1011,8 @@ function Save-Tasks {
         $state = [pscustomobject][ordered]@{
             version = 1
             items = @($items)
+            archive = @($script:ArchivedTasks | ForEach-Object { ConvertTo-StoredTask $_ })
+            trash = @($script:TrashedTasks | ForEach-Object { ConvertTo-StoredTask $_ })
         }
         $json = ConvertTo-Json -InputObject $state -Depth 5
 
@@ -645,6 +1088,8 @@ function Test-SameFolder {
 function Load-Settings {
     $script:SettingsReadError = $null
     $settings = @{
+        PriorityEnabled = $true
+        RemindersEnabled = $true
         Theme = 'system'
         DataDirectory = $null
     }
@@ -657,6 +1102,8 @@ function Load-Settings {
 
             if (-not [string]::IsNullOrWhiteSpace($raw)) {
                 $saved = $raw | ConvertFrom-Json
+                if ($saved.priorityEnabled -is [bool]) { $settings.PriorityEnabled = $saved.priorityEnabled }
+                if ($saved.remindersEnabled -is [bool]) { $settings.RemindersEnabled = $saved.remindersEnabled }
                 $theme = [string]$saved.theme
                 if ($theme -in @('system', 'light', 'dark')) {
                     $settings.Theme = $theme
@@ -708,6 +1155,8 @@ function Save-Settings {
         }
 
         $state = [pscustomobject][ordered]@{
+            priorityEnabled = [bool]$script:Settings.PriorityEnabled
+            remindersEnabled = [bool]$script:Settings.RemindersEnabled
             theme = [string]$script:Settings.Theme
             dataDirectory = $customDataDirectory
         }
@@ -919,8 +1368,13 @@ function Update-SettingsUi {
     $script:DataPathText.Text = $script:DataDirectory
     $script:DataPathText.ToolTip = $script:DataFilePath
     Update-StorageStatus
-    $script:SettingsVersionText.Text = 'DaiBan ' + $script:AppVersion
+    $script:SettingsVersionText.Text = 'TodoDesk ' + $script:AppVersion
     Update-ThemeControls
+    $script:SuppressFeatureEvents = $true
+    $script:PriorityFeatureToggle.IsChecked = $script:Settings.PriorityEnabled -ne $false
+    $script:RemindersFeatureToggle.IsChecked = $script:Settings.RemindersEnabled -ne $false
+    $script:SuppressFeatureEvents = $false
+    Update-ComposerFeatures
 }
 
 # ------------------------------------------------------------------ ui setup
@@ -981,7 +1435,7 @@ function Initialize-Interface {
     param($Window)
 
     $script:Window = $Window
-    foreach ($name in @('MainContent','Hero','HeroTitle','HeroSubtitle','ComposerHost','TaskArea','ListCard')) {
+    foreach ($name in @('LicenseInfoButton','ArchiveCompletedButton','TrashSettingsButton','ArchiveSettingsButton','MainContent','ComposerPriority','ComposerReminderButton','PriorityFeatureToggle','RemindersFeatureToggle','ComposerHost','TaskArea','ListCard')) {
         Set-Variable -Scope Script -Name $name -Value $Window.FindName($name)
     }
     foreach ($name in @('FilterAll','FilterActive','FilterCompleted','ListCountText','TaskProgress','ProgressText','EmptyTitle','EmptyDescription','StorageStatusText','StorageStatusDot','MaximizeButton','MaximizeGlyph','CompletedToggleButton')) {
@@ -1047,11 +1501,9 @@ function Initialize-Interface {
 function Update-ResponsiveLayout {
     param([double]$Width, [double]$Height)
     if (-not $script:UiReady) { return }
+    $script:SettingsCardRoot.MaxHeight = [Math]::Max(200, $Height - 32)
     $compact = $Width -lt 600 -or $Height -lt 560
     $script:MainContent.Margin = if ($compact) { [System.Windows.Thickness]::new(16,12,16,12) } else { [System.Windows.Thickness]::new(30,26,30,24) }
-    $script:Hero.Margin = [System.Windows.Thickness]::new(0,$(if ($compact) { 8 } else { 15 }),0,0)
-    $script:HeroTitle.FontSize = if ($compact) { 22 } else { 30 }
-    $script:HeroSubtitle.Visibility = if ($compact) { 'Collapsed' } else { 'Visible' }
     $script:ComposerHost.Height = if ($compact) { 46 } else { 56 }
     $script:ComposerHost.Margin = [System.Windows.Thickness]::new(0,$(if ($compact) { 14 } else { 26 }),0,0)
     $script:TaskArea.Margin = [System.Windows.Thickness]::new(0,$(if ($compact) { 14 } else { 22 }),0,0)
@@ -1165,13 +1617,23 @@ function New-TaskRow {
 
     $textHost = New-Object System.Windows.Controls.Grid
     $textHost.Margin = [System.Windows.Thickness]::new(2, 0, 10, 0)
+    $textColumn = [System.Windows.Controls.ColumnDefinition]::new()
+    $textColumn.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+    [void]$textHost.ColumnDefinitions.Add($textColumn)
+    $priorityColumn = [System.Windows.Controls.ColumnDefinition]::new()
+    $priorityColumn.Width = [System.Windows.GridLength]::Auto
+    [void]$textHost.ColumnDefinitions.Add($priorityColumn)
     [System.Windows.Controls.Grid]::SetColumn($textHost, 1)
 
     $title = New-Object System.Windows.Controls.TextBlock
     $title.Text = [string]$Task.Title
     $title.Style = $script:TaskTitleStyle
+    $title.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, (Get-TaskTitleBrush $Task))
     $title.DataContext = $Task
     $title.ToolTip = [string]$Task.Title + [Environment]::NewLine + '双击编辑'
+    if ($script:Settings.PriorityEnabled -ne $false) {
+        $title.ToolTip += [Environment]::NewLine + '优先级：' + (Get-PriorityInfo (Get-TaskPriority $Task)).Label
+    }
     [System.Windows.Controls.ToolTipService]::SetInitialShowDelay($title, 900)
     $title.Add_MouseLeftButtonDown({
         param($sender, $eventArgs)
@@ -1180,9 +1642,10 @@ function New-TaskRow {
             $eventArgs.Handled = $true
         }
     })
+    [System.Windows.Controls.Grid]::SetColumnSpan($title, 2)
     [void]$textHost.Children.Add($title)
     $reminderLabel = $null
-    if ($null -ne $Task.RemindAt -and -not $Task.IsCompleted) {
+    if ($script:Settings.RemindersEnabled -ne $false -and $null -ne $Task.RemindAt -and -not $Task.IsCompleted) {
         $title.Margin = [System.Windows.Thickness]::new(0,0,0,16)
         $reminderLabel = [System.Windows.Controls.TextBlock]::new()
         $reminderLabel.Text = '提醒 · ' + $Task.RemindAt.ToString('MM-dd HH:mm')
@@ -1191,6 +1654,7 @@ function New-TaskRow {
         $reminderLabel.Margin = [System.Windows.Thickness]::new(0,0,0,5)
         $reminderLabel.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'SecondaryBrush')
         $reminderLabel.IsHitTestVisible = $false
+        [System.Windows.Controls.Grid]::SetColumnSpan($reminderLabel, 2)
         [void]$textHost.Children.Add($reminderLabel)
     }
 
@@ -1215,6 +1679,7 @@ function New-TaskRow {
         -Style $script:RowIconStyle `
         -Context $null
     $editButton.Margin = [System.Windows.Thickness]::new(1, 0, 1, 0)
+    $editButton.Style = $script:Window.FindResource('QuietRowActionStyle')
 
     $deleteButton = New-RowActionButton `
         -Geometry 'M 2,4 L 14,4 M 6,4 L 6,2.3 C 6,1.9 6.3,1.6 6.7,1.6 L 9.3,1.6 C 9.7,1.6 10,1.9 10,2.3 L 10,4 M 3.4,4 L 4.4,13.8 C 4.5,14.4 4.9,14.8 5.5,14.8 L 10.5,14.8 C 11.1,14.8 11.5,14.4 11.6,13.8 L 12.6,4 M 6.1,6.8 L 6.45,12 M 9.9,6.8 L 9.55,12' `
@@ -1222,8 +1687,11 @@ function New-TaskRow {
         -Style $script:DeleteIconStyle `
         -Context $null
     $deleteButton.Margin = [System.Windows.Thickness]::new(1, 0, 0, 0)
+    $deleteButton.Style = $script:Window.FindResource('QuietDeleteActionStyle')
 
     $reminderButton = New-RowActionButton -Geometry 'M 8,1 A 7,7 0 1 1 7.99,1 M 8,4 L 8,8 L 11,10' -ToolTip '设置时间提醒' -Style $script:RowIconStyle -Context $null
+    $reminderButton.Style = $script:Window.FindResource('QuietRowActionStyle')
+    if ($script:Settings.RemindersEnabled -eq $false) { $reminderButton.Visibility = 'Collapsed' }
     $reminderButton.Tag = $Task
     $reminderButton.Add_Click({ param($sender, $eventArgs); Open-ReminderDialog -Task $sender.Tag })
     [System.Windows.Automation.AutomationProperties]::SetName($reminderButton, '设置时间提醒')
@@ -1234,8 +1702,14 @@ function New-TaskRow {
         $title.ToolTip += [Environment]::NewLine + $reminderButton.ToolTip
     }
     # Keep the clock discoverable without taking width away from the task title.
-    $reminderButton.Opacity = 1
+    # Visibility follows pointer or keyboard focus via QuietRowActionStyle.
     [void]$actions.Children.Add($reminderButton)
+    $priorityButton = [System.Windows.Controls.Button]::new()
+    $priorityButton.Style = $script:RowIconStyle
+    Initialize-PriorityButton -Button $priorityButton -Task $Task
+    $priorityButton.Visibility = 'Collapsed'
+    [System.Windows.Controls.Grid]::SetColumn($priorityButton, 1)
+    [void]$textHost.Children.Add($priorityButton)
     [void]$actions.Children.Add($editButton)
     [void]$actions.Children.Add($deleteButton)
     [void]$grid.Children.Add($actions)
@@ -1258,6 +1732,8 @@ function New-TaskRow {
         Check = $check
         Title = $title
         Editor = $editor
+        EditHost = $textHost
+        PriorityButton = $priorityButton
         ReminderLabel = $reminderLabel
         Actions = $actions
         EditButton = $editButton
@@ -1312,9 +1788,12 @@ function New-TaskRow {
     $editor.Add_LostKeyboardFocus({
         param($sender, $eventArgs)
         $ctx = $sender.Tag
-        if ($null -ne $ctx -and $ctx.IsEditing) {
-            Complete-Edit -Context $ctx -ReturnFocus $false
-        }
+        [void]$script:Window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::ContextIdle, [Action]{
+            $ctx = $script:EditingContext
+            if ($null -ne $ctx -and $ctx.IsEditing -and -not $ctx.EditHost.IsKeyboardFocusWithin -and -not $ctx.PriorityButton.ContextMenu.IsOpen) {
+                Complete-Edit -Context $ctx -ReturnFocus $false
+            }
+        })
     })
 
     $showActions = {
@@ -1428,6 +1907,7 @@ function Refresh-TaskList {
         $script:EmptyDescription.Text = '原文件保持不变，请检查文件或备份后重新打开。'
     }
     $script:EditingContext = $null
+    Update-StoredCounts
 
     $targetOffset = if ($ResetScroll) { 0.0 } else { $previousOffset }
     $scrollViewer = $script:TaskScroll
@@ -1463,6 +1943,7 @@ function Start-EditTask {
     }
 
     $Context.IsEditing = $true
+    $Context.PriorityButton.Visibility = if ($script:Settings.PriorityEnabled -ne $false) { 'Visible' } else { 'Collapsed' }
     if ($null -ne $Context.ReminderLabel) { $Context.ReminderLabel.Visibility = 'Collapsed' }
     $Context.Row.SetResourceReference([System.Windows.Controls.Border]::BackgroundProperty, 'EditRowBrush')
     $Context.Title.Visibility = [System.Windows.Visibility]::Collapsed
@@ -1513,6 +1994,7 @@ function Complete-Edit {
         [string]$Context.Task.Title)
 
     $Context.IsEditing = $false
+    $Context.PriorityButton.Visibility = 'Collapsed'
     if ($null -ne $Context.ReminderLabel) { $Context.ReminderLabel.Visibility = 'Visible' }
     $Context.Editor.Visibility = [System.Windows.Visibility]::Collapsed
     $Context.Title.Visibility = [System.Windows.Visibility]::Visible
@@ -1550,6 +2032,7 @@ function Cancel-Edit {
 
     $Context.Editor.Text = [string]$Context.Task.Title
     $Context.IsEditing = $false
+    $Context.PriorityButton.Visibility = 'Collapsed'
     if ($null -ne $Context.ReminderLabel) { $Context.ReminderLabel.Visibility = 'Visible' }
     $Context.Editor.Visibility = [System.Windows.Visibility]::Collapsed
     $Context.Title.Visibility = [System.Windows.Visibility]::Visible
@@ -1582,7 +2065,10 @@ function Commit-ActiveEdit {
 }
 
 function Add-TaskFromComposer {
+    param([bool]$ReturnFocus = $true)
     if ($null -ne $script:LoadError) { return }
+    $resumeEdit = $script:EditingContext
+    $resumeText = if ($null -ne $resumeEdit) { $resumeEdit.Editor.Text } else { $null }
     $title = ConvertTo-CleanTitle -Text ([string]$script:NewTaskInput.Text)
     if ($title.Length -eq 0) {
         $script:NewTaskInput.Focus() | Out-Null
@@ -1598,20 +2084,29 @@ function Add-TaskFromComposer {
         IsCompleted = $false
         CreatedAt = Get-Date
         CompletedAt = $null
-        RemindAt = $null
+        RemindAt = $(if ($script:Settings.RemindersEnabled -ne $false) { $script:ComposerReminderDraft.RemindAt } else { $null })
         ReminderNotified = $false
+        Priority = $(if ($script:Settings.PriorityEnabled -ne $false) { $script:ComposerPriorityValue } else { 'medium' })
         IsEditing = $false
     }
 
     $script:ActiveTasks.Insert(0, $task)
     $script:NewTaskInput.Clear()
+    $script:ComposerReminderDraft.RemindAt = $null
+    Update-ComposerFeatures
     Update-ComposerState
     Save-Tasks
     Refresh-TaskList -ResetScroll
     $script:UndoPayload = @{ Kind = 'add'; Task = $task }
     Show-Toast -Message $(if ($script:LastTasksSaveSucceeded) { '已添加待办' } else { '已添加，尚未保存，请保留窗口' }) -CanUndo $true
-    $script:NewTaskInput.Focus() | Out-Null
-    [System.Windows.Input.Keyboard]::Focus($script:NewTaskInput) | Out-Null
+    if ($ReturnFocus) {
+        $script:NewTaskInput.Focus() | Out-Null
+        [System.Windows.Input.Keyboard]::Focus($script:NewTaskInput) | Out-Null
+    } elseif ($null -ne $resumeEdit) {
+        foreach ($row in @($script:ActiveList.Children) + @($script:CompletedList.Children)) {
+            if ($row.Tag.Task.Id -eq $resumeEdit.Task.Id) { Start-EditTask $row.Tag; $row.Tag.Editor.Text = $resumeText; break }
+        }
+    }
 }
 
 function Toggle-Task {
@@ -1678,6 +2173,7 @@ function Remove-Task {
         $script:ActiveTasks.RemoveAt($index)
     }
 
+    $script:TrashedTasks.Insert(0, $Task)
     Save-Tasks
     Refresh-TaskList
 
@@ -1688,7 +2184,7 @@ function Remove-Task {
         WasCompleted = $wasCompleted
     }
 
-    Show-Toast -Message '已删除一项待办' -CanUndo $true
+    Show-Toast -Message '已移入回收站' -CanUndo $true
 }
 
 function Clear-Completed {
@@ -1697,6 +2193,7 @@ function Clear-Completed {
     Commit-ActiveEdit
 
     $removed = @($script:CompletedTasks)
+    foreach ($task in $removed) { $script:TrashedTasks.Insert(0, $task) }
     $script:CompletedTasks.Clear()
     Save-Tasks
     Refresh-TaskList
@@ -1706,7 +2203,7 @@ function Clear-Completed {
         Items = $removed
     }
 
-    Show-Toast -Message ('已清除 {0} 项已完成待办' -f $removed.Count) -CanUndo $true
+    Show-Toast -Message ('已将 {0} 项移入回收站' -f $removed.Count) -CanUndo $true
 }
 
 function Test-TaskIdInList {
@@ -1727,6 +2224,7 @@ function Invoke-UndoPayload {
     if ($null -eq $Payload) { return }
 
     switch ($Payload.Kind) {
+        'priority' { $Payload.Task | Add-Member -NotePropertyName Priority -NotePropertyValue $Payload.Priority -Force }
         'add' {
             $index = Find-TaskIndex -Tasks $script:ActiveTasks -Id $Payload.Task.Id
             if ($index -ge 0) { $script:ActiveTasks.RemoveAt($index) }
@@ -1735,6 +2233,7 @@ function Invoke-UndoPayload {
         'toggle' { Toggle-Task -Task $Payload.Task; return }
         'delete' {
             $task = $Payload.Task
+            Remove-StoredTask -Tasks $script:TrashedTasks -Id $task.Id
             if ($null -eq $task) { return }
 
             if ($Payload.WasCompleted) {
@@ -1754,10 +2253,17 @@ function Invoke-UndoPayload {
                 }
             }
         }
+        'archive' {
+            foreach ($task in $Payload.Items) {
+                Remove-StoredTask -Tasks $script:ArchivedTasks -Id $task.Id
+                if (-not (Test-TaskIdInList $script:CompletedTasks $task.Id)) { [void]$script:CompletedTasks.Add($task) }
+            }
+        }
         'clearCompleted' {
             $items = @($Payload.Items)
             for ($i = $items.Count - 1; $i -ge 0; $i--) {
                 $task = $items[$i]
+                Remove-StoredTask -Tasks $script:TrashedTasks -Id $task.Id
                 if ($null -ne $task -and
                     -not (Test-TaskIdInList -Tasks $script:CompletedTasks -Id $task.Id)) {
                     $script:CompletedTasks.Insert(0, $task)
@@ -2150,6 +2656,7 @@ $script:WindowLoadedHandler = {
 
 $script:WindowClosingHandler = {
     param($sender, $eventArgs)
+    if (-not [string]::IsNullOrWhiteSpace($script:NewTaskInput.Text)) { Add-TaskFromComposer -ReturnFocus $false }
     Commit-ActiveEdit
     # No unconditional close-time write: unreadable data and unchanged files stay untouched.
     if ($script:TasksDirty -and $null -eq $script:LoadError) {
@@ -2290,6 +2797,18 @@ function Update-WindowControls {
 }
 
 function Wire-InterfaceEvents {
+    Initialize-PriorityButton -Button $script:ComposerPriority -Task $null
+    $script:ComposerReminderButton.Add_Click({
+        $script:ComposerReminderDraft.Title = if ([string]::IsNullOrWhiteSpace($script:NewTaskInput.Text)) { '新待办' } else { $script:NewTaskInput.Text }
+        $script:ComposerReminderDialogOpen = $true
+        try { Open-ReminderDialog $script:ComposerReminderDraft } finally { $script:ComposerReminderDialogOpen = $false }
+    })
+    foreach ($toggle in @($script:PriorityFeatureToggle, $script:RemindersFeatureToggle)) {
+        $toggle.Add_Checked({ Update-FeaturePreferences })
+        $toggle.Add_Unchecked({ Update-FeaturePreferences })
+    }
+    $script:Window.Add_PreviewMouseDown({ param($sender,$eventArgs); Confirm-EditOutside $eventArgs.OriginalSource })
+    Update-ComposerFeatures
     $script:Window.Add_SizeChanged({
         param($sender, $eventArgs)
         Update-ResponsiveLayout -Width $eventArgs.NewSize.Width -Height $eventArgs.NewSize.Height
@@ -2333,6 +2852,15 @@ function Wire-InterfaceEvents {
     $script:NewTaskInput.Add_TextChanged($script:NewTaskChangedHandler)
     $script:NewTaskInput.Add_PreviewKeyDown($script:NewTaskKeyHandler)
     $script:AddButton.Add_Click({ Add-TaskFromComposer })
+    $script:LicenseInfoButton.Add_Click({ Show-LicenseInformation })
+    $script:ArchiveCompletedButton.Add_Click({ Archive-Completed })
+    $script:TrashSettingsButton.Add_Click({ Open-StoredTasksDialog 'trash' })
+    $script:ArchiveSettingsButton.Add_Click({ Open-StoredTasksDialog 'archive' })
+    $script:Window.Add_PreviewMouseUp({
+        param($sender,$eventArgs)
+        if (-not (Test-InComposer $eventArgs.OriginalSource)) { Queue-ComposerConfirmation -Force $true }
+    })
+    $script:NewTaskInput.Add_LostKeyboardFocus({ Queue-ComposerConfirmation })
     $script:ClearCompletedButton.Add_Click({ Clear-Completed })
     $script:ToastUndoButton.Add_Click({ Undo-LastTaskAction })
 }

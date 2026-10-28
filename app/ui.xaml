@@ -271,7 +271,7 @@
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Focusable" Value="True" />
-            <Setter Property="FocusVisualStyle" Value="{StaticResource CircleFocusVisual}" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type Button}">
@@ -300,6 +300,10 @@
                             </Grid>
                         </Grid>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Ring" Property="StrokeThickness" Value="2" />
+                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource CheckRingHoverBrush}" />
                                 <Setter TargetName="Ring" Property="StrokeThickness" Value="1.4" />
@@ -486,6 +490,77 @@
                 </ControlTemplate.Triggers>
             </ControlTemplate></Setter.Value></Setter>
         </Style>
+        <Style x:Key="PriorityMenuItemStyle" TargetType="{x:Type MenuItem}">
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="{x:Type MenuItem}">
+                <Border x:Name="MenuChrome" Background="{TemplateBinding Background}" CornerRadius="7" Padding="{TemplateBinding Padding}">
+                    <Grid VerticalAlignment="Center"><Grid.ColumnDefinitions><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/></Grid.ColumnDefinitions>
+                        <Ellipse x:Name="PriorityDot" Width="7" Height="7" HorizontalAlignment="Left" VerticalAlignment="Center" Fill="{Binding Tag[Color], RelativeSource={RelativeSource TemplatedParent}}"/>
+                        <ContentPresenter Grid.Column="1" ContentSource="Header" VerticalAlignment="Center"/>
+                        <Path x:Name="SelectedMark" Grid.Column="2" Width="12" Height="12" Data="M 1,6 L 4.5,9.5 L 11,2.5" Stretch="None" Visibility="Collapsed" Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="MenuChrome" Property="Background" Value="{DynamicResource QuietHoverBrush}"/></Trigger>
+                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="SelectedMark" Property="Visibility" Value="Visible"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="QuietRowActionStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource RowIconButtonStyle}">
+            <Setter Property="Opacity" Value="0"/><Setter Property="IsHitTestVisible" Value="False"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType={x:Type Border}}}" Value="True"><Setter Property="Opacity" Value="1"/><Setter Property="IsHitTestVisible" Value="True"/></DataTrigger>
+                <DataTrigger Binding="{Binding IsKeyboardFocusWithin, RelativeSource={RelativeSource AncestorType={x:Type Border}}}" Value="True"><Setter Property="Opacity" Value="1"/><Setter Property="IsHitTestVisible" Value="True"/></DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="QuietDeleteActionStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource QuietRowActionStyle}">
+            <Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{DynamicResource DangerBrush}"/></Trigger></Style.Triggers>
+        </Style>
+        <Style x:Key="PriorityMenuStyle" TargetType="{x:Type ContextMenu}">
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="HasDropShadow" Value="False"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="Normal"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="{x:Type ContextMenu}">
+                <Border Margin="8" Padding="6" Background="{DynamicResource MenuSurfaceBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1" CornerRadius="11">
+                    <Border.Effect><DropShadowEffect BlurRadius="14" ShadowDepth="3" Opacity="0.18"/></Border.Effect>
+                    <StackPanel KeyboardNavigation.DirectionalNavigation="Cycle">
+                        <TextBlock Text="优先级" FontSize="11" Foreground="{DynamicResource SecondaryBrush}" Margin="10,5,10,6"/>
+                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                    </StackPanel>
+                </Border>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="PriorityBadgeStyle" TargetType="{x:Type Button}">
+            <Setter Property="Width" Value="44"/><Setter Property="Height" Value="26"/>
+            <Setter Property="Margin" Value="4,0,6,0"/><Setter Property="FontSize" Value="12"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource SoftFocusVisual}"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="{x:Type Button}">
+                <Border x:Name="BadgeChrome" Background="{TemplateBinding Background}" CornerRadius="6" Padding="8,0">
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="7"/></Grid.ColumnDefinitions>
+                        <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                        <Path Grid.Column="1" Width="6" Height="4" Data="M 0,0 L 3,3 L 6,0" Stretch="Uniform" Stroke="{TemplateBinding Foreground}" StrokeThickness="1" VerticalAlignment="Center" Opacity="0.65"/>
+                    </Grid>
+                </Border>
+                <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="BadgeChrome" Property="Opacity" Value="0.78"/></Trigger></ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="FeatureToggleStyle" TargetType="{x:Type CheckBox}">
+            <Setter Property="Height" Value="32"/><Setter Property="Foreground" Value="{DynamicResource InkBrush}"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource SoftFocusVisual}"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="{x:Type CheckBox}">
+                <Grid Background="Transparent"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="36"/></Grid.ColumnDefinitions>
+                    <ContentPresenter VerticalAlignment="Center"/>
+                    <Border x:Name="SwitchTrack" Grid.Column="1" Height="20" CornerRadius="10" Background="{DynamicResource SegmentTrackBrush}" BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="1">
+                        <Ellipse x:Name="SwitchKnob" Width="14" Height="14" Margin="2" HorizontalAlignment="Left" Fill="{DynamicResource SecondaryBrush}"/>
+                    </Border>
+                </Grid>
+                <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="SwitchTrack" Property="Background" Value="{DynamicResource AccentBrush}"/><Setter TargetName="SwitchTrack" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="SwitchKnob" Property="HorizontalAlignment" Value="Right"/><Setter TargetName="SwitchKnob" Property="Fill" Value="{DynamicResource OnAccentBrush}"/></Trigger></ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Background="{DynamicResource WindowBackgroundBrush}">
@@ -608,10 +683,6 @@
                     </StackPanel>
                 </Grid>
 
-                <StackPanel x:Name="Hero" Grid.Row="1" Margin="0,15,0,0">
-                    <TextBlock x:Name="HeroTitle" Text="把事情，一件件做好。" FontFamily="{StaticResource DisplayFont}" FontSize="30" FontWeight="SemiBold" />
-                    <TextBlock x:Name="HeroSubtitle" Margin="0,10,0,0" Text="留一点空间，专注眼前的小事。" FontSize="13" Foreground="{DynamicResource SecondaryBrush}" />
-                </StackPanel>
 
                 <Grid x:Name="ComposerHost" Grid.Row="2" Height="56" Margin="0,26,0,0">
                     <Border Background="{DynamicResource CardBrush}"
@@ -685,7 +756,10 @@
                             </Button.Template>
                         </Button>
 
-                        <TextBlock Grid.Column="2" Text="Enter ↵" Margin="12,0,2,0" VerticalAlignment="Center" FontSize="11.5" Foreground="{DynamicResource TertiaryBrush}" IsHitTestVisible="False"/>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
+                            <Button x:Name="ComposerPriority" Style="{StaticResource RowIconButtonStyle}" Content="中" ToolTip="新任务优先级：中（点击选择）"/>
+                            <Button x:Name="ComposerReminderButton" Content="设置提醒" Margin="2,0,0,0" Height="28" Style="{StaticResource QuietTextButtonStyle}" AutomationProperties.Name="设置新待办的提醒时间"/>
+                        </StackPanel>
                         <Grid Grid.Column="1" Margin="8,0,0,0">
                             <TextBlock x:Name="ComposerPlaceholder"
                                        VerticalAlignment="Center"
@@ -781,13 +855,15 @@
                                         <Button x:Name="CompletedToggleButton" HorizontalAlignment="Left" Style="{StaticResource QuietTextButtonStyle}" ToolTip="折叠或展开已完成任务">
                                             <TextBlock x:Name="CompletedHeaderText" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource SecondaryBrush}"/>
                                         </Button>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <Button x:Name="ArchiveCompletedButton" Content="归档" Style="{StaticResource QuietTextButtonStyle}" Margin="0,0,8,0" ToolTip="归档全部已完成任务"/>
                                         <Button x:Name="ClearCompletedButton"
-                                                HorizontalAlignment="Right"
                                                 VerticalAlignment="Center"
                                                 Style="{StaticResource QuietTextButtonStyle}"
                                                 Content="清除"
                                                 ToolTip="清除全部已完成事项"
                                                 AutomationProperties.Name="清除全部已完成事项" />
+                                        </StackPanel>
                                     </Grid>
 
                                     <StackPanel x:Name="CompletedList" Grid.Row="1" />
@@ -936,6 +1012,7 @@
                         BorderThickness="1"
                         CornerRadius="18"
                         Padding="26,22,26,22">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
@@ -999,6 +1076,11 @@
                                                  AutomationProperties.Name="使用深色外观" />
                                 </UniformGrid>
                             </Border>
+                            <TextBlock Text="功能" Margin="0,18,0,4" FontSize="11.5" Foreground="{DynamicResource SecondaryBrush}"/>
+                            <CheckBox x:Name="PriorityFeatureToggle" Content="优先级" Style="{StaticResource FeatureToggleStyle}"/>
+                            <CheckBox x:Name="RemindersFeatureToggle" Content="时间提醒" Style="{StaticResource FeatureToggleStyle}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,5"><Button x:Name="TrashSettingsButton" Content="回收站" Style="{StaticResource SettingsButtonStyle}"/><Button x:Name="ArchiveSettingsButton" Content="归档记录" Margin="8,0,0,0" Style="{StaticResource SettingsButtonStyle}"/></StackPanel>
+                            <TextBlock Text="关闭功能不会删除已有的优先级和提醒设置。" TextWrapping="Wrap" Margin="0,5,0,0" FontSize="11" Foreground="{DynamicResource SecondaryBrush}"/>
                         </StackPanel>
 
                         <StackPanel Grid.Row="2" Margin="0,24,0,0">
@@ -1047,6 +1129,8 @@
                         </StackPanel>
 
                         <Grid Grid.Row="3" Margin="0,24,0,0">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                            <StackPanel Grid.Row="1" Margin="0,8,0,0"><TextBlock Text="项目维护：宋培恩" Foreground="{DynamicResource SecondaryBrush}" FontSize="10.5"/><Button x:Name="LicenseInfoButton" Content="查看 MIT 开源许可" HorizontalAlignment="Left" Margin="0,5,0,0" Style="{StaticResource QuietTextButtonStyle}"/></StackPanel>
                             <TextBlock x:Name="SettingsVersionText"
                                        FontSize="10.8"
                                        Foreground="{DynamicResource TertiaryBrush}" />
@@ -1056,6 +1140,7 @@
                                        Text="本地 · 离线" />
                         </Grid>
                     </Grid>
+                    </ScrollViewer>
                 </Border>
             </Grid>
         </Grid>

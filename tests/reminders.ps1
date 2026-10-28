@@ -67,7 +67,8 @@ try {
         $dialog = @($app.Windows | Where-Object { $_.Title -eq '时间提醒' })[0]
         try {
             $dialog.FindName('ReminderDate').SelectedDate = (Get-Date).AddDays(1).Date
-            $dialog.FindName('ReminderTime').Text = '09:30'
+            $dialog.FindName('ReminderHour').Text = '09'
+            $dialog.FindName('ReminderMinute').Text = '30'
             $dialog.FindName('SaveReminder').RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
             Assert (-not $dialog.IsVisible -and $null -ne $task.RemindAt) 'Reminder dialog saves and closes'
         } catch { $script:DialogFailure = $_; if ($dialog) { $dialog.Close() } }

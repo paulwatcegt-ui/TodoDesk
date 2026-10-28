@@ -2,6 +2,24 @@
 
 ## 1.3.0 — Unreleased
 
+- Auto-confirm new-task drafts on outside clicks while keeping priority/reminder configuration safe.
+- Added a settings recycle bin for delete/clear operations and completed-task archiving with recovery and undo; stored all collections atomically in the same data file.
+- Updated the settings product name to TodoDesk and added MIT/maintainer information while preserving existing copyright notices.
+
+- Show task priority through title colors, expose per-task priority choices only while editing, and hide reminder/edit/delete controls until hover or keyboard focus.
+- Added persistent, enabled-by-default switches for priorities and reminders without clearing existing task metadata.
+- Commit inline edits on clicks outside the editor while keeping priority-menu interactions safe; replaced the Enter hint with a draft reminder picker for new tasks.
+
+- Refined priority controls into tinted badges and rounded popovers with colored dots, a selected checkmark and consistent theme-aware hover states; removed the native icon gutter and square frame.
+- Quieted task rows by showing edit/delete actions on pointer hover or keyboard focus.
+
+- Removed the two hero copy lines to give the list more space.
+- Added high/medium/low task priorities with distinct theme-aware colors, composer selection, row menus, persistence and undo; legacy tasks default to medium.
+- Replaced the duplicate circular keyboard-focus adorner with focus feedback on the existing completion circle.
+
+- Improved reminder setup with relative-time presets, a calendar, hour/minute steppers and a live summary; cancellation preserves the previous reminder.
+- Fixed reminder save/remove callbacks failing to resolve script-local functions when started through the normal application entry point, and added a regression check using that entry path.
+
 - Fixed compact filter-label clipping by measuring the row from its content.
 - Added per-task local reminder times, cancellation, overdue catch-up on launch and a separate notification window that works while minimized.
 

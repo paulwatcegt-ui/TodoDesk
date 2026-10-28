@@ -41,3 +41,19 @@ jobs:
       - name: Verify local reminders and compact labels
         shell: cmd
         run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\reminders.ps1
+
+      - name: Verify reminder callbacks from actual app entry
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\reminder-entry.ps1
+
+      - name: Verify task priorities and legacy data
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\priorities.ps1
+
+      - name: Verify feature switches and inline editing
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\features.ps1
+
+      - name: Verify recycle bin, archive and auto-add
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\lifecycle.ps1

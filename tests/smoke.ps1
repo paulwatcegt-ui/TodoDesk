@@ -182,6 +182,7 @@ try {
     Layout 400 400
     Assert ($script:TaskScroll.ScrollableHeight -le 1) 'One task needs no internal scroll at the minimum window size'
     Snapshot 'preview-small' 400 400
+    Set-ThemePreference -Preference $script:EffectiveTheme
     Open-Settings
     $script:SettingsOverlay.BeginAnimation([Windows.UIElement]::OpacityProperty, $null)
     $script:SettingsOverlay.Opacity = 1
@@ -225,6 +226,7 @@ try {
     Load-Tasks
     Update-StorageStatus
     Refresh-TaskList
+    $script:NewTaskInput.Clear()
     $beforeClose = [IO.File]::GetLastWriteTimeUtc($script:DataFilePath)
     & $script:WindowClosingHandler $window ([ComponentModel.CancelEventArgs]::new())
     Assert ([IO.File]::GetLastWriteTimeUtc($script:DataFilePath) -eq $beforeClose) 'Closing an unchanged list does not rewrite user data'

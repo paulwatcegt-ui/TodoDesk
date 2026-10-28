@@ -31,6 +31,7 @@ $arguments = @(
     ('/resource:"' + (Join-Path $appDir 'themes\light.xaml') + '",DaiBan.theme.light.xaml'),
     ('/resource:"' + (Join-Path $appDir 'themes\dark.xaml') + '",DaiBan.theme.dark.xaml'),
     ('/resource:"' + (Join-Path $appDir 'app.ico') + '",DaiBan.app.ico'),
+    ('/resource:"' + (Join-Path $root 'LICENSE') + '",DaiBan.LICENSE'),
     ('"' + (Join-Path $hostDir 'DaiBanHost.cs') + '"'),
     ('"' + (Join-Path $hostDir 'AssemblyInfo.cs') + '"')
 )
