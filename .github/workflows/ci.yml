@@ -1,0 +1,39 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate and build native app
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate scripts, XAML and themes
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\validate.ps1
+
+      - name: Build native DaiBan.exe
+        shell: cmd
+        run: powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\host\build.ps1
+
+      - name: Verify native executable
+        shell: cmd
+        run: if not exist dist\native\DaiBan.exe exit 1
+
+      - name: Verify task interactions and persistence
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\smoke.ps1
+
+      - name: Verify native caption and window controls
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\window.ps1
