@@ -1,0 +1,69 @@
+name: Release Windows app
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate source and run application checks
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($test in @('validate','smoke','window','reminders','reminder-entry','priorities','features','lifecycle')) {
+            & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File ('.\tests\' + $test + '.ps1')
+            if ($LASTEXITCODE -ne 0) { throw ('Failed: ' + $test) }
+          }
+
+      - name: Prepare verified WiX toolset
+        shell: powershell
+        run: .\installer\setup-wix.ps1
+
+      - name: Build native executable and Chinese installer
+        shell: powershell
+        run: |
+          .\host\build.ps1
+          .\installer\build-msi.ps1
+
+      - name: Test custom path, installed app and uninstall
+        shell: powershell
+        run: .\tests\installer.ps1
+
+      - name: Prepare download files and checksums
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $PWD 'dist\native\DaiBan.exe')).ProductVersion
+          if ($env:GITHUB_REF_NAME -ne ('v' + $version)) { throw 'Release tag does not match application version.' }
+          [void][IO.Directory]::CreateDirectory((Join-Path $PWD 'dist\release'))
+          Copy-Item -LiteralPath dist\native\DaiBan.exe -Destination dist\release\TodoDesk.exe
+          Copy-Item -LiteralPath ('dist\installer\TodoDesk-' + $version + '-x64.msi') -Destination dist\release
+          Copy-Item -LiteralPath LICENSE -Destination dist\release\LICENSE.txt
+          $checksums = Get-ChildItem dist\release -File | Sort-Object Name | ForEach-Object { (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.Name }
+          [IO.File]::WriteAllLines((Join-Path $PWD 'dist\release\SHA256SUMS.txt'),$checksums,[Text.Encoding]::ASCII)
+
+      - name: Publish GitHub release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          gh release create $env:GITHUB_REF_NAME --verify-tag --title ('TodoDesk ' + $env:GITHUB_REF_NAME) --notes-file RELEASE_NOTES.md --draft
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create the release draft.' }
+          $assets = @(Get-ChildItem dist\release -File | ForEach-Object { $_.FullName })
+          gh release upload $env:GITHUB_REF_NAME @assets
+          if ($LASTEXITCODE -ne 0) { throw 'Could not upload release files.' }
+          gh release edit $env:GITHUB_REF_NAME --draft=false --latest
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the release.' }

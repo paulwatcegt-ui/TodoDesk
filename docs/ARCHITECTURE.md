@@ -21,7 +21,7 @@ app/DaiBan.ps1, app/ui.xaml, themes, app.ico
 host/build.ps1 ── csc ──► dist/native/DaiBan.exe
                   │           (resources embedded)
                   ▼
-installer/build-msi.ps1 ── candle/light ──► dist/installer/DaiBan-1.3.0.msi
+installer/build-msi.ps1 ── candle/light ──► dist/installer/TodoDesk-1.3.0-x64.msi
 ```
 
 The native host is compiled against the Windows PowerShell engine that ships with Windows 11. No PowerShell installation or extra runtime is required.
@@ -36,9 +36,9 @@ The native host is compiled against the Windows PowerShell engine that ships wit
 
 ## Installation
 
-`DaiBan-1.3.0.msi` is a per-user Windows Installer package:
+`TodoDesk-1.3.0-x64.msi` is a per-user Windows Installer package:
 
-- Installs `DaiBan.exe` to `%LOCALAPPDATA%\Programs\DaiBan`.
+- Installs `TodoDesk.exe` and LICENSE to `%LOCALAPPDATA%\Programs\TodoDesk` by default; the Chinese WixUI_InstallDir wizard lets the user choose another writable directory.
 - Creates Start menu and desktop shortcuts.
 - Registers an entry in Windows “Installed apps”.
 - Removes the previous script-based install files if present.

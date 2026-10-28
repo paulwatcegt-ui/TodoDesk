@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for considering a contribution to DaiBan. The project intentionally stays small: one local todo list, no accounts, no cloud sync, no extra modules.
+Thanks for considering a contribution to TodoDesk. The project intentionally stays small: one local todo list, no accounts, no cloud sync, no extra modules.
 
 ## Requirements
 
@@ -20,13 +20,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\host\build.ps1
 
 This produces `dist\native\DaiBan.exe`. The host embeds `app\DaiBan.ps1`, `app\ui.xaml`, the themes and the icon, so the installed app does not need external resource files.
 
-Build the MSI (after placing/extracting WiX v3 in `%LOCALAPPDATA%\Programs\WiX`):
+Prepare the pinned portable WiX toolset and build the MSI:
 
 ```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\installer\setup-wix.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\installer\build-msi.ps1
 ```
 
-This produces `dist\installer\DaiBan-1.3.0.msi`.
+This produces `dist\installer\TodoDesk-1.3.0-x64.msi`.
 
 ## Run from source
 

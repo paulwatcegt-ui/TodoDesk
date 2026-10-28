@@ -40,6 +40,9 @@ if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
 }
 
 $required = @(
+    '.github\workflows\release.yml',
+    'installer\setup-wix.ps1',
+    'tests\installer.ps1',
     'tests\lifecycle.ps1',
     'tests\features.ps1',
     'tests\priorities.ps1',
@@ -70,6 +73,8 @@ foreach ($relative in $required) {
 }
 
 $powershellFiles = @(
+    'installer\setup-wix.ps1',
+    'tests\installer.ps1',
     'tests\lifecycle.ps1',
     'tests\features.ps1',
     'tests\priorities.ps1',

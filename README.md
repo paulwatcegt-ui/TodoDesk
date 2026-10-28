@@ -12,6 +12,12 @@
 | --- | --- |
 | ![浅色](docs/preview-light.png) | ![深色](docs/preview-dark.png) |
 
+## 下载安装
+
+在 [GitHub Releases](https://github.com/paulwatcegt-ui/TodoDesk/releases/latest) 下载 **TodoDesk-1.3.0-x64.msi**，双击启动中文安装向导。安装时可浏览或输入路径，默认是当前用户的 `%LOCALAPPDATA%\Programs\TodoDesk`。请选择自己有写入权限的文件夹。
+
+安装后通过桌面或开始菜单的 TodoDesk 打开；也可下载便携版 TodoDesk.exe。卸载通过 Windows“已安装的应用”进行，保留待办数据。下载页附有 SHA256SUMS.txt。当前发行版未签名，严格的企业应用控制策略可能阻止启动，详见 [发布说明](RELEASE_NOTES.md)。
+
 ## 本地预览：无需下载应用安装包
 
 需要 **Windows 11**，使用系统自带的 **Windows PowerShell 5.1 / .NET Framework 4.8**。不需要 Node.js、npm、.NET SDK 或第三方依赖。
@@ -118,13 +124,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\host\build.ps1
 
 交互检查在 `.testdata/` 中生成独立数据，加 `-Screenshots` 可重新生成文档中的界面图片。
 
-MSI 安装包可选，需要 WiX Toolset v3；默认工具目录为 `%LOCALAPPDATA%\Programs\WiX`：
+MSI 使用固定版本 WiX 3.14.1。准备脚本从官方 Release 下载便携工具并核对 SHA-256，解压到忽略提交的 `dist/tools`：
 
 ```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\installer\setup-wix.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\installer\build-msi.ps1
 ```
 
-输出 `dist/installer/DaiBan-1.3.0.msi`。EXE / MSI 默认未签名，见 [签名说明](docs/SIGNING.md)。安装包发布前需实测安装、升级与卸载。
+输出 `dist/installer/TodoDesk-1.3.0-x64.msi`。EXE / MSI 默认未签名，见 [签名说明](docs/SIGNING.md)。安装包发布前需实测安装、升级与卸载。
 
 ## 开源与发布
 
@@ -138,7 +145,7 @@ preview.cmd   一键启动独立预览
 start.cmd     使用正式数据的源码启动入口
 ```
 
-GitHub Actions 在推送 main 和 PR 时验证源码、运行交互检查并构建 EXE。发布时将验证过的 EXE、可选 MSI 及其 SHA-256 校验值上传到仓库 Releases。源码不包含用户数据或签名凭据。
+GitHub Actions 在推送 main 和 PR 时验证源码、运行交互检查并构建 EXE。推送版本标签（例如 v1.3.0）会触发发布流程：运行检查、构建 EXE / MSI、实测自选目录的安装与卸载，并将文件和 SHA-256 校验值上传到 Releases。源码不包含用户数据或签名凭据。
 
 贡献见 [CONTRIBUTING.md](CONTRIBUTING.md)，安全问题见 [SECURITY.md](SECURITY.md)，实现说明见 [架构文档](docs/ARCHITECTURE.md)。
 

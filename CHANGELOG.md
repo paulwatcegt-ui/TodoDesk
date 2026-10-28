@@ -2,6 +2,10 @@
 
 ## 1.3.0 — Unreleased
 
+- Added a Chinese MSI installation wizard with a selectable per-user install path, TodoDesk shortcuts, license display and uninstall registration.
+- Pinned portable WiX 3.14.1 with a SHA-256 check and added tagged GitHub Releases with MSI/portable downloads and checksums.
+- Added actual custom-path installation, shortcut, launch, user-data retention and uninstall verification.
+
 - Auto-confirm new-task drafts on outside clicks while keeping priority/reminder configuration safe.
 - Added a settings recycle bin for delete/clear operations and completed-task archiving with recovery and undo; stored all collections atomically in the same data file.
 - Updated the settings product name to TodoDesk and added MIT/maintainer information while preserving existing copyright notices.

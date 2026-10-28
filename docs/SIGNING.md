@@ -4,7 +4,7 @@ DaiBan is currently published without a commercial code-signing certificate. Thi
 
 ## Current state
 
-- `DaiBan.exe` and `DaiBan-1.3.0.msi` are unsigned.
+- `DaiBan.exe` and `TodoDesk-1.3.0-x64.msi` are unsigned.
 - Windows may show “Unknown publisher” during installation. The MSI itself is installed by the signed Windows Installer service.
 - No certificate, private key, PFX, or password is included in this repository.
 - The download page includes SHA-256 checksum files so users can verify the download.
@@ -28,14 +28,14 @@ signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
 
 signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
   /f C:\path\to\codesign.pfx /p <password> `
-  .\dist\installer\DaiBan-1.3.0.msi
+  .\dist\installer\TodoDesk-1.3.0-x64.msi
 ```
 
 Verify:
 
 ```powershell
 signtool verify /pa /v .\dist\native\DaiBan.exe
-signtool verify /pa /v .\dist\installer\DaiBan-1.3.0.msi
+signtool verify /pa /v .\dist\installer\TodoDesk-1.3.0-x64.msi
 ```
 
 Build the MSI **after** signing the executable so the signed EXE is inside the package, then sign the MSI.
