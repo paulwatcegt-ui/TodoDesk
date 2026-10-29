@@ -12,7 +12,7 @@ $env:DAIBAN_ENTRY_TEST_DIR = $testRoot
 $env:DAIBAN_ENTRY_APP_ROOT = Join-Path $root 'app'
 $env:DAIBAN_ENTRY_THEME = $Theme
 $source = [IO.File]::ReadAllText((Join-Path $root 'app\DaiBan.ps1'))
-$source = $source.Replace("`$script:AppVersion = '1.3.0'", "`$script:AppRoot = `$env:DAIBAN_ENTRY_APP_ROOT`r`n`$script:AppVersion = '1.3.0'")
+$source = $source.Replace("`$script:AppVersion = '1.3.1'", "`$script:AppRoot = `$env:DAIBAN_ENTRY_APP_ROOT`r`n`$script:AppVersion = '1.3.1'")
 $automation = @'
 function Assert-Entry($value, $message) {
     if (-not $value) { throw $message }

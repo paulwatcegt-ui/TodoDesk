@@ -80,4 +80,6 @@
     <SolidColorBrush x:Key="StatsColor5" Color="#70BDCF" />
     <SolidColorBrush x:Key="StatsColor6" Color="#D7CB7B" />
     <SolidColorBrush x:Key="StatsColor7" Color="#B6BDCA" />
+    <SolidColorBrush x:Key="ComposerPriorityForegroundBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="ComposerPrioritySurfaceBrush" Color="#48536A" />
 </ResourceDictionary>

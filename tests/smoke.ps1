@@ -69,18 +69,19 @@ try {
     Assert ($script:StorageStatusText.Text -eq '数据已保存到本机') 'Saved status follows a successful disk write'
     $row = $script:ActiveList.Children[0]
     $context = $row.Child.Children[1].Children[0].Tag
+    $originalTitle = $context.Task.Title
     Start-EditTask -Context $context
     $context.Editor.Text = '整理今天想做的三件小事（已编辑）'
     Complete-Edit -Context $context -ReturnFocus $false
-    Assert ($script:ActiveTasks[0].Title -match '已编辑') 'Inline editing commits title'
+    Assert ($context.Task.Title -match '已编辑') 'Inline editing commits title'
     $script:ToastUndoButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
-    Assert ($script:ActiveTasks[0].Title -eq '整理今天想做的三件小事') 'Edit can be undone from its toast'
+    Assert ($context.Task.Title -eq $originalTitle) 'Edit can be undone from its toast'
     $context = $script:ActiveList.Children[0].Tag
     Start-EditTask -Context $context
     $context.Editor.Text = '不应提交的编辑'
     $escape = [pscustomobject]@{ Key = [Windows.Input.Key]::Escape; Handled = $false }
     & $script:WindowKeyHandler $window $escape
-    Assert ($escape.Handled -and $null -eq $script:EditingContext -and $script:ActiveTasks[0].Title -eq '整理今天想做的三件小事') 'Escape cancels editing even while a toast is visible'
+    Assert ($escape.Handled -and $null -eq $script:EditingContext -and $context.Task.Title -eq $originalTitle) 'Escape cancels editing even while a toast is visible'
     Toggle-Task -Task $script:ActiveTasks[4]
     Toggle-Task -Task $script:ActiveTasks[3]
     Assert ($script:CompletedTasks.Count -eq 2 -and $script:TaskProgress.Value -eq 40) 'Completion updates groups and progress'

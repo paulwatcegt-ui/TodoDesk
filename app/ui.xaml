@@ -992,6 +992,7 @@
         </Grid>
 
         <Grid x:Name="SettingsOverlay"
+              shell:WindowChrome.IsHitTestVisibleInChrome="True"
               Grid.RowSpan="2"
               Panel.ZIndex="30"
               Opacity="0"
@@ -1037,6 +1038,7 @@
                                        Foreground="{DynamicResource InkBrush}"
                                        Text="设置" />
                             <Button x:Name="SettingsCloseButton"
+                                    shell:WindowChrome.IsHitTestVisibleInChrome="True"
                                     Width="28"
                                     Height="28"
                                     HorizontalAlignment="Right"

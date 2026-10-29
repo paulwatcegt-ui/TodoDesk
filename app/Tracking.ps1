@@ -5,12 +5,27 @@ function script:Get-OrderedTasks {
     $tasks = if ($Completed) { @($script:CompletedTasks) } else { @($script:ActiveTasks) }
     if ($Completed) { $sorted = @($tasks | Sort-Object CompletedAt -Descending) }
     elseif ($script:Settings.PriorityEnabled -ne $false) {
-        $sorted = @($tasks | Sort-Object @{ Expression = { switch (Get-TaskPriority $_) { 'high' { 0 }; 'low' { 2 }; default { 1 } } } }, @{ Expression = 'CreatedAt'; Descending = $true })
+        $sorted = @($tasks | Sort-Object @{ Expression = { switch (Get-TaskPriority $_) { 'high' { 0 }; 'low' { 2 }; default { 1 } } } }, @{ Expression = 'CreatedAt'; Descending = $false })
     } else { $sorted = @($tasks | Sort-Object CreatedAt -Descending) }
     $order = if ($Completed) { @($script:CompletedOrder) } else { @($script:ActiveOrder) }
     $lookup = @{}; foreach ($task in $tasks) { $lookup[$task.Id] = $task }
     foreach ($id in $order) { if ($lookup.ContainsKey($id)) { $lookup[$id]; $lookup.Remove($id) } }
     foreach ($task in $sorted) { if ($lookup.ContainsKey($task.Id)) { $task; $lookup.Remove($task.Id) } }
+}
+
+function script:Place-NewTaskAfterPeers {
+    param($Task)
+    if ($script:Settings.PriorityEnabled -eq $false -or $script:ActiveOrder.Count -eq 0) { return }
+    $existing = @(Get-OrderedTasks | Where-Object { $_.Id -ne $Task.Id })
+    $ids = [Collections.Generic.List[string]]::new()
+    $index = -1
+    foreach ($item in $existing) {
+        $ids.Add($item.Id)
+        if ((Get-TaskPriority $item) -eq (Get-TaskPriority $Task)) { $index=$ids.Count }
+    }
+    if ($index -lt 0) { $index=$ids.Count }
+    $ids.Insert($index,$Task.Id)
+    $script:ActiveOrder.Clear(); foreach ($id in $ids) { [void]$script:ActiveOrder.Add($id) }
 }
 
 function script:Move-TaskPosition {
@@ -27,7 +42,16 @@ function script:Move-TaskPosition {
         $order = $script:ActiveOrder
         if ($completed) { $order = $script:CompletedOrder }
         $order.Clear(); foreach ($id in $ids) { [void]$order.Add($id) }
+        $positions = @{}
+        foreach ($row in @($script:ActiveList.Children)+@($script:CompletedList.Children)) { $positions[$row.Tag.Task.Id]=$row.TranslatePoint([Windows.Point]::new(0,0),$script:TaskScroll).Y }
+        Clear-TaskDropHint
         Save-Tasks; Refresh-TaskList
+        $script:Window.UpdateLayout()
+        foreach ($row in @($script:ActiveList.Children)+@($script:CompletedList.Children)) {
+            if (-not $positions.ContainsKey($row.Tag.Task.Id)) { continue }
+            $delta=$positions[$row.Tag.Task.Id]-$row.TranslatePoint([Windows.Point]::new(0,0),$script:TaskScroll).Y
+            if ([Math]::Abs($delta) -gt 0.5) { Animate-TaskOffset $row $delta 0 180 }
+        }
         return
     }
 }
@@ -41,6 +65,60 @@ function script:Remove-TaskTimeHistory {
     param([string[]]$Ids)
     foreach ($entry in @($script:TimeEntries)) { if ($entry.TaskId -in $Ids) { $script:TimeEntries.Remove($entry) } }
     foreach ($id in $Ids) { $script:ActiveOrder.Remove($id); $script:CompletedOrder.Remove($id) }
+}
+
+function script:Initialize-DragArtwork {
+    if ('TodoDeskDropHint' -as [type]) { return }
+    try { Add-Type -ReferencedAssemblies @('System.dll', 'System.Xaml.dll', [Windows.Media.Visual].Assembly.Location, [Windows.FrameworkElement].Assembly.Location, [Windows.DependencyObject].Assembly.Location) -TypeDefinition @'
+using System.Windows;
+using System.Windows.Documents;
+using System.Windows.Media;
+public sealed class TodoDeskDropHint : Adorner {
+    public bool After;
+    public Brush Accent;
+    public TodoDeskDropHint(UIElement row, Brush accent) : base(row) { Accent=accent; IsHitTestVisible=false; }
+    protected override void OnRender(DrawingContext dc) {
+        double y=After ? AdornedElement.RenderSize.Height+1 : -1;
+        double right=System.Math.Max(20,AdornedElement.RenderSize.Width-12);
+        Pen pen=new Pen(Accent,2); pen.StartLineCap=PenLineCap.Round; pen.EndLineCap=PenLineCap.Round;
+        dc.DrawLine(pen,new Point(16,y),new Point(right,y));
+        dc.DrawEllipse(Accent,null,new Point(12,y),3,3);
+    }
+}
+'@
+    } catch { Write-AppLog -Message ('Drag artwork unavailable: '+$_.Exception.Message) }
+}
+
+function script:Animate-TaskOffset {
+    param($Element,[double]$From,[double]$To,[int]$Milliseconds=110)
+    if ($Element.RenderTransform -isnot [Windows.Media.TranslateTransform]) { $Element.RenderTransform=[Windows.Media.TranslateTransform]::new() }
+    if (-not [Windows.SystemParameters]::ClientAreaAnimation) { $Element.RenderTransform.Y=$To; return }
+    $ease=[Windows.Media.Animation.CubicEase]::new(); $ease.EasingMode='EaseOut'
+    $animation=[Windows.Media.Animation.DoubleAnimation]::new($From,$To,[TimeSpan]::FromMilliseconds($Milliseconds))
+    $animation.EasingFunction=$ease
+    $Element.RenderTransform.BeginAnimation([Windows.Media.TranslateTransform]::YProperty,$animation)
+}
+
+function script:Clear-TaskDropHint {
+    if ($null -ne $script:DropHintLayer -and $null -ne $script:DropHint) { $script:DropHintLayer.Remove($script:DropHint) }
+    if ($null -ne $script:DropHintRow) {
+        $child=$script:DropHintRow.Child
+        if ($child.RenderTransform -is [Windows.Media.TranslateTransform]) { Animate-TaskOffset $child $child.RenderTransform.Y 0 }
+    }
+    $script:DropHint=$null; $script:DropHintLayer=$null; $script:DropHintRow=$null
+}
+
+function script:Show-TaskDropHint {
+    param($Row,[bool]$After)
+    if ($script:DropHintRow -eq $Row -and $null -ne $script:DropHint -and $script:DropHint.After -eq $After) { return }
+    Clear-TaskDropHint
+    if (-not ('TodoDeskDropHint' -as [type])) { return }
+    $layer=[Windows.Documents.AdornerLayer]::GetAdornerLayer($Row)
+    if ($null -eq $layer) { return }
+    $script:DropHintRow=$Row; $script:DropHintLayer=$layer
+    $script:DropHint=[TodoDeskDropHint]::new($Row,$script:Window.FindResource('AccentBrush'))
+    $script:DropHint.After=$After; $layer.Add($script:DropHint)
+    Animate-TaskOffset $Row.Child 0 $(if ($After) { -3 } else { 3 })
 }
 
 function script:Enable-TaskDragging {
@@ -66,8 +144,9 @@ function script:Enable-TaskDragging {
         if ([Math]::Abs($point.X-$script:DragStart.X) -lt [Windows.SystemParameters]::MinimumHorizontalDragDistance -and
             [Math]::Abs($point.Y-$script:DragStart.Y) -lt [Windows.SystemParameters]::MinimumVerticalDragDistance) { return }
         $data = [Windows.DataObject]::new('TodoDesk.TaskId',[string]$script:DragTaskId)
+        $sender.Opacity=0.4
         try { [void][Windows.DragDrop]::DoDragDrop($sender,$data,[Windows.DragDropEffects]::Move) }
-        finally { $script:DragTaskId = $null; $sender.BorderThickness = [Windows.Thickness]::new(0) }
+        finally { $script:DragTaskId = $null; $sender.Opacity=1; Clear-TaskDropHint }
     })
     $Row.Add_DragOver({
         param($sender,$eventArgs)
@@ -75,19 +154,22 @@ function script:Enable-TaskDragging {
         if (-not $eventArgs.Data.GetDataPresent('TodoDesk.TaskId')) { return }
         $id = [string]$eventArgs.Data.GetData('TodoDesk.TaskId')
         $group = if ($sender.Tag.Task.IsCompleted) { @($script:CompletedTasks) } else { @($script:ActiveTasks) }
-        if (@($group | Where-Object { $_.Id -eq $id }).Count -eq 0) { return }
+        if ($id -eq $sender.Tag.Task.Id -or @($group | Where-Object { $_.Id -eq $id }).Count -eq 0) { Clear-TaskDropHint; return }
         $eventArgs.Effects = 'Move'
-        $sender.SetResourceReference([Windows.Controls.Border]::BorderBrushProperty,'AccentBrush')
         $after = $eventArgs.GetPosition($sender).Y -gt $sender.ActualHeight/2
-        $sender.BorderThickness = if ($after) { [Windows.Thickness]::new(0,0,0,2) } else { [Windows.Thickness]::new(0,2,0,0) }
+        Show-TaskDropHint $sender $after
         $y = $eventArgs.GetPosition($script:TaskScroll).Y
-        if ($y -lt 28) { $script:TaskScroll.LineUp() }
-        elseif ($y -gt $script:TaskScroll.ActualHeight-28) { $script:TaskScroll.LineDown() }
+        $now=[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        if ($now-$script:LastDragScroll -ge 35) {
+            if ($y -lt 28) { $script:TaskScroll.ScrollToVerticalOffset($script:TaskScroll.VerticalOffset-8) }
+            elseif ($y -gt $script:TaskScroll.ActualHeight-28) { $script:TaskScroll.ScrollToVerticalOffset($script:TaskScroll.VerticalOffset+8) }
+            $script:LastDragScroll=$now
+        }
     })
-    $Row.Add_DragLeave({ param($sender,$eventArgs); $sender.BorderThickness = [Windows.Thickness]::new(0) })
+    $Row.Add_DragLeave({ param($sender,$eventArgs); if ($script:DropHintRow -eq $sender) { Clear-TaskDropHint } })
     $Row.Add_Drop({
         param($sender,$eventArgs)
-        $sender.BorderThickness = [Windows.Thickness]::new(0)
+        Clear-TaskDropHint
         if ($eventArgs.Data.GetDataPresent('TodoDesk.TaskId')) {
             Move-TaskPosition ([string]$eventArgs.Data.GetData('TodoDesk.TaskId')) $sender.Tag.Task.Id ($eventArgs.GetPosition($sender).Y -gt $sender.ActualHeight/2)
             $eventArgs.Handled = $true
@@ -198,9 +280,35 @@ function script:Get-TimeSummary {
     return @($totals.Values | Sort-Object @{Expression='Milliseconds';Descending=$true},Title)
 }
 
+function script:Set-StatisticsTaskVisible {
+    param([string]$TaskId,[bool]$Visible)
+    $ids = @($script:Settings.StatsHiddenTaskIds | Where-Object { $_ -ne $TaskId })
+    if (-not $Visible) { $ids += $TaskId }
+    $script:Settings.StatsHiddenTaskIds = @($ids)
+    Save-Settings
+    Update-StatisticsView
+}
+
+function script:Update-StatisticsSources {
+    $script:Settings.StatsIncludeArchive = [bool]$script:StatsIncludeArchive.IsChecked
+    $script:Settings.StatsIncludeTrash = [bool]$script:StatsIncludeTrash.IsChecked
+    Save-Settings
+    Update-StatisticsView
+}
+
+function script:Get-StatisticsSummary {
+    param([datetime]$Start,[datetime]$End)
+    $excluded = [Collections.Generic.HashSet[string]]::new()
+    if ($script:Settings.StatsIncludeArchive -eq $false) { foreach ($task in $script:ArchivedTasks) { [void]$excluded.Add($task.Id) } }
+    if ($script:Settings.StatsIncludeTrash -eq $false) { foreach ($task in $script:TrashedTasks) { [void]$excluded.Add($task.Id) } }
+    Get-TimeSummary $Start $End | Where-Object { -not $excluded.Contains($_.TaskId) }
+}
+
 function script:Update-StatisticsView {
     if (-not $script:UiReady -or $null -eq $script:StatisticsPanel) { return }
     $script:StatsPie.Children.Clear(); $script:StatsLegend.Children.Clear()
+    $script:StatsHiddenList.Children.Clear()
+    $script:StatsHiddenExpander.Visibility='Collapsed'
     $script:StatsError.Text = ''
     $custom = $script:StatsPeriod -eq 'custom'
     $script:StatsCustomDates.Visibility = if ($custom) { 'Visible' } else { 'Collapsed' }
@@ -217,7 +325,21 @@ function script:Update-StatisticsView {
             }
             default { $start=$date.Date; $end=$start.AddDays(1) }
         }
-        $summary = @(Get-TimeSummary $start $end)
+        $allSummary = @(Get-StatisticsSummary $start $end)
+        $summary = @($allSummary | Where-Object { $_.TaskId -notin $script:Settings.StatsHiddenTaskIds })
+        $hidden = @($allSummary | Where-Object { $_.TaskId -in $script:Settings.StatsHiddenTaskIds })
+        $script:StatsHiddenExpander.Visibility=if ($hidden.Count) { 'Visible' } else { 'Collapsed' }
+        $script:StatsHiddenExpander.Header='已隐藏的任务 · '+$hidden.Count+'（展开恢复）'
+        foreach ($item in $hidden) {
+            $restore=[Windows.Controls.Button]::new()
+            $restore.Style=$script:Window.FindResource('QuietTextButtonStyle')
+            $restore.HorizontalContentAlignment='Left'
+            $restore.Content='显示 · '+$item.Title
+            $restore.ToolTip=$item.Title
+            $restore.Tag=$item.TaskId
+            $restore.Add_Click({param($sender,$eventArgs); Set-StatisticsTaskVisible $sender.Tag $true})
+            [void]$script:StatsHiddenList.Children.Add($restore)
+        }
         $total=0.0; foreach ($item in $summary) { $total += $item.Milliseconds }
         $script:StatsTotal.Text = Format-TaskDuration $total
         $script:StatsRange.Text = $start.ToString('yyyy-MM-dd')+' 至 '+$end.AddDays(-1).ToString('yyyy-MM-dd')
@@ -244,7 +366,7 @@ function script:Update-StatisticsView {
             $shape.ToolTip=$item.Title+' · '+(Format-TaskDuration $item.Milliseconds)+(' · {0:0.0}%' -f (100*$fraction))
             [void]$script:StatsPie.Children.Add($shape)
             $row=[Windows.Controls.Grid]::new(); $row.Margin=[Windows.Thickness]::new(0,6,0,6)
-            foreach ($width in @(18,'*','Auto')) {
+            foreach ($width in @(18,'*','Auto','Auto')) {
                 $column=[Windows.Controls.ColumnDefinition]::new()
                 $column.Width = if ($width -eq '*') { [Windows.GridLength]::new(1,[Windows.GridUnitType]::Star) } elseif ($width -eq 'Auto') { [Windows.GridLength]::Auto } else { [Windows.GridLength]::new(18) }
                 [void]$row.ColumnDefinitions.Add($column)
@@ -256,6 +378,12 @@ function script:Update-StatisticsView {
             $value=[Windows.Controls.TextBlock]::new(); $value.Text=(Format-TaskDuration $item.Milliseconds)+('  {0:0.0}%' -f (100*$fraction)); $value.FontSize=12
             $value.SetResourceReference([Windows.Controls.TextBlock]::ForegroundProperty,'SecondaryBrush')
             [Windows.Controls.Grid]::SetColumn($value,2); [void]$row.Children.Add($value)
+            $hide=New-RowActionButton -Geometry 'M 1,8 C 4,2 12,2 15,8 C 12,14 4,14 1,8 M 6,8 A 2,2 0 1 1 10,8 A 2,2 0 1 1 6,8 M 2,2 L 14,14' -ToolTip ('在统计中隐藏：'+$item.Title) -Style $script:RowIconStyle -Context $null
+            $hide.Tag=$item.TaskId
+            $hide.Width=26; $hide.Height=26; $hide.Margin=[Windows.Thickness]::new(4,0,0,0)
+            [Windows.Automation.AutomationProperties]::SetName($hide,'在统计中隐藏：'+$item.Title)
+            $hide.Add_Click({param($sender,$eventArgs); Set-StatisticsTaskVisible $sender.Tag $false})
+            [Windows.Controls.Grid]::SetColumn($hide,3); [void]$row.Children.Add($hide)
             [void]$script:StatsLegend.Children.Add($row)
             $index++
         }
@@ -263,6 +391,7 @@ function script:Update-StatisticsView {
 }
 
 function script:Initialize-TrackingUI {
+    Initialize-DragArtwork
     $script:StatisticsPanel=[Windows.Markup.XamlReader]::Parse(@'
 <ScrollViewer xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="10,6">
  <ScrollViewer.Resources>
@@ -283,21 +412,35 @@ function script:Initialize-TrackingUI {
    <DatePicker x:Name="StatsEndDate" Grid.Column="2" Language="zh-CN" Foreground="{DynamicResource InkBrush}" Background="{DynamicResource SettingsFieldBrush}" BorderBrush="{DynamicResource SettingsFieldBorderBrush}"/>
   </Grid>
   <TextBlock x:Name="StatsRange" Margin="0,12,0,5" FontSize="11.5" Foreground="{DynamicResource SecondaryBrush}"/>
-  <TextBlock Text="累计计时" FontSize="12" Foreground="{DynamicResource SecondaryBrush}"/>
+  <TextBlock Text="当前显示累计用时" FontSize="12" Foreground="{DynamicResource SecondaryBrush}"/>
   <TextBlock x:Name="StatsTotal" Text="00:00:00" FontSize="28" FontWeight="SemiBold" Margin="0,3,0,4"/>
   <TextBlock x:Name="StatsError" Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap"/>
   <Canvas x:Name="StatsPie" Width="180" Height="180" HorizontalAlignment="Center"/>
-  <TextBlock x:Name="StatsEmpty" Text="选定范围内暂无计时记录" Foreground="{DynamicResource SecondaryBrush}" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+  <TextBlock x:Name="StatsEmpty" Text="选定范围内暂无可显示的计时记录" Foreground="{DynamicResource SecondaryBrush}" TextWrapping="Wrap" HorizontalAlignment="Center" Margin="0,0,0,12"/>
   <StackPanel x:Name="StatsLegend"/>
-  <TextBlock Text="按实际计时记录统计，含已完成、归档和回收站记录。" TextWrapping="Wrap" FontSize="11" Margin="0,14,0,0" Foreground="{DynamicResource SecondaryBrush}"/>
+  <Expander x:Name="StatsHiddenExpander" Visibility="Collapsed" Foreground="{DynamicResource SecondaryBrush}" FontSize="12" Margin="0,10,0,0"><StackPanel x:Name="StatsHiddenList" Margin="12,4,0,0"/></Expander>
+  <Border BorderBrush="{DynamicResource HairlineBrush}" BorderThickness="0,1,0,0" Margin="0,16,0,0" Padding="0,12,0,0">
+   <StackPanel>
+    <TextBlock Text="显示范围" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+    <CheckBox x:Name="StatsIncludeArchive" Content="包含归档记录" Style="{DynamicResource FeatureToggleStyle}" Margin="0,4"/>
+    <CheckBox x:Name="StatsIncludeTrash" Content="包含回收站记录" Style="{DynamicResource FeatureToggleStyle}" Margin="0,4"/>
+    <TextBlock Text="总时长和占比仅统计当前显示项。隐藏不会删除计时记录，可展开“已隐藏的任务”恢复。" TextWrapping="Wrap" FontSize="11" Margin="0,8,0,0" Foreground="{DynamicResource SecondaryBrush}"/>
+   </StackPanel>
+  </Border>
  </StackPanel>
 </ScrollViewer>
 '@)
     [void]$script:TaskScroll.Parent.Children.Add($script:StatisticsPanel)
-    foreach ($name in @('StatsAnchorDate','StatsCustomDates','StatsStartDate','StatsEndDate','StatsRange','StatsTotal','StatsError','StatsPie','StatsEmpty','StatsLegend')) {
+    foreach ($name in @('StatsAnchorDate','StatsCustomDates','StatsStartDate','StatsEndDate','StatsRange','StatsTotal','StatsError','StatsPie','StatsEmpty','StatsLegend','StatsHiddenExpander','StatsHiddenList','StatsIncludeArchive','StatsIncludeTrash')) {
         Set-Variable -Scope Script -Name $name -Value $script:StatisticsPanel.FindName($name)
     }
     $script:StatsPeriod='day'
+    foreach ($name in @('StatsIncludeArchive','StatsIncludeTrash')) {
+        $toggle=Get-Variable -Scope Script -Name $name -ValueOnly
+        $toggle.IsChecked=$script:Settings[$name] -ne $false
+        $toggle.Add_Checked({ Update-StatisticsSources })
+        $toggle.Add_Unchecked({ Update-StatisticsSources })
+    }
     foreach ($name in @('StatsDay','StatsWeek','StatsMonth','StatsCustom')) {
         $button=$script:StatisticsPanel.FindName($name); $button.Style=$script:Window.FindResource('FilterStyle')
         $button.Add_Checked({ param($sender,$eventArgs); $script:StatsPeriod=[string]$sender.Tag; Update-StatisticsView })

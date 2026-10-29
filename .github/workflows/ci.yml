@@ -65,3 +65,11 @@ jobs:
       - name: Verify backup import and individual trash deletion
         shell: cmd
         run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\backup.ps1
+
+      - name: Verify same-priority order and drag feedback
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\polish.ps1
+
+      - name: Verify priority keyboard focus and statistics display filters
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\statistics-display.ps1

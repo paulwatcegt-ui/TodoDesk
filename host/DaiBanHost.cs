@@ -9,7 +9,7 @@ using System.Threading;
 
 internal static class Program
 {
-    private const string ProductVersion = "1.3.0";
+    private const string ProductVersion = "1.3.1";
     private const string AppUserModelId = "DaiBan.Todo.Desktop";
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]

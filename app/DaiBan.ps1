@@ -18,7 +18,7 @@ $script:AppRoot = if ($PSScriptRoot) {
     Split-Path -Parent $MyInvocation.MyCommand.Definition
 }
 
-$script:AppVersion = '1.3.0'
+$script:AppVersion = '1.3.1'
 $script:TaskFilter = 'all'
 $script:ComposerPriorityValue = 'medium'
 $script:ComposerReminderDraft = [pscustomobject]@{ Title = '新待办'; RemindAt = $null; IsDraft = $true }
@@ -44,6 +44,9 @@ $script:Settings = @{
     RemindersEnabled = $true
     TimingEnabled = $false
     StatisticsEnabled = $false
+    StatsIncludeArchive = $true
+    StatsIncludeTrash = $true
+    StatsHiddenTaskIds = @()
     Theme = 'system'
     DataDirectory = $null
 }
@@ -489,7 +492,7 @@ function Queue-ComposerConfirmation {
         $force = $script:ComposerConfirmForce
         $script:ComposerConfirmForce = $false
         $script:ComposerConfirmQueued = $false
-        if (-not $script:ComposerReminderDialogOpen -and -not $script:ComposerPriority.ContextMenu.IsOpen -and
+        if (-not $script:ComposerReturnFocusPending -and -not $script:ComposerReminderDialogOpen -and -not $script:ComposerPriority.ContextMenu.IsOpen -and
             ($force -or -not $script:Composer.IsKeyboardFocusWithin) -and -not [string]::IsNullOrWhiteSpace($script:NewTaskInput.Text)) {
             Add-TaskFromComposer -ReturnFocus $false
         }
@@ -792,10 +795,10 @@ function Initialize-PriorityButton {
     $priority = if ($null -eq $Task) { $script:ComposerPriorityValue } else { Get-TaskPriority $Task }
     $info = Get-PriorityInfo $priority
     $Button.Style = $script:Window.FindResource('PriorityBadgeStyle')
-    $Button.SetResourceReference([System.Windows.Controls.Control]::BackgroundProperty, $info.Brush.Replace('Brush','SurfaceBrush'))
+    $Button.SetResourceReference([System.Windows.Controls.Control]::BackgroundProperty, $(if ($null -eq $Task -and $priority -eq 'medium') { 'ComposerPrioritySurfaceBrush' } else { $info.Brush.Replace('Brush','SurfaceBrush') }))
     $Button.Content = $info.Label
     $Button.FontWeight = 'SemiBold'
-    $Button.SetResourceReference([System.Windows.Controls.Control]::ForegroundProperty, $info.Brush)
+    $Button.SetResourceReference([System.Windows.Controls.Control]::ForegroundProperty, $(if ($null -eq $Task -and $priority -eq 'medium') { 'ComposerPriorityForegroundBrush' } else { $info.Brush }))
     $Button.ToolTip = $(if ($null -eq $Task) { '新任务' } else { '任务' }) + '优先级：' + $info.Label + '（点击选择）'
     [System.Windows.Automation.AutomationProperties]::SetName($Button, $Button.ToolTip)
     $menu = [System.Windows.Controls.ContextMenu]::new()
@@ -831,8 +834,20 @@ function Initialize-PriorityButton {
             param($sender,$eventArgs)
             $selection = $sender.Tag
             if ($null -eq $selection.Task) {
+                $script:ComposerReturnFocusPending = $true
+                $selection.Button.ContextMenu.IsOpen = $false
                 $script:ComposerPriorityValue = $selection.Priority
                 Initialize-PriorityButton -Button $selection.Button -Task $null
+                [void]$script:Window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::ContextIdle,[Action]{
+                    try {
+                        if (-not $script:SettingsOpen -and -not $script:ComposerReminderDialogOpen -and
+                            $null -eq $script:EditingContext -and $script:TaskFilter -ne 'stats') {
+                            [void]$script:NewTaskInput.Focus()
+                            [void][System.Windows.Input.Keyboard]::Focus($script:NewTaskInput)
+                            $script:NewTaskInput.CaretIndex=$script:NewTaskInput.Text.Length
+                        }
+                    } finally { $script:ComposerReturnFocusPending = $false }
+                })
             } else { Set-TaskPriority -Task $selection.Task -Priority $selection.Priority }
         })
         [void]$menu.Items.Add($item)
@@ -840,6 +855,14 @@ function Initialize-PriorityButton {
     $Button.ContextMenu = $menu
     if ($Button.Tag -ne 'PriorityPickerInitialized') {
         $Button.Tag = 'PriorityPickerInitialized'
+        $Button.Add_PreviewKeyDown({
+            param($sender,$eventArgs)
+            if ($sender -eq $script:ComposerPriority -and $eventArgs.Key -eq 'Enter' -and
+                -not $sender.ContextMenu.IsOpen -and -not [string]::IsNullOrWhiteSpace($script:NewTaskInput.Text)) {
+                Add-TaskFromComposer
+                $eventArgs.Handled=$true
+            }
+        })
         $Button.Add_Click({
             param($sender,$eventArgs)
             $sender.ContextMenu.PlacementTarget = $sender
@@ -1222,6 +1245,9 @@ function Load-Settings {
         RemindersEnabled = $true
         TimingEnabled = $false
         StatisticsEnabled = $false
+        StatsIncludeArchive = $true
+        StatsIncludeTrash = $true
+        StatsHiddenTaskIds = @()
         Theme = 'system'
         DataDirectory = $null
     }
@@ -1238,6 +1264,9 @@ function Load-Settings {
                 if ($saved.remindersEnabled -is [bool]) { $settings.RemindersEnabled = $saved.remindersEnabled }
                 if ($saved.timingEnabled -is [bool]) { $settings.TimingEnabled = $saved.timingEnabled }
                 if ($saved.statisticsEnabled -is [bool]) { $settings.StatisticsEnabled = $saved.statisticsEnabled }
+                if ($saved.statsIncludeArchive -is [bool]) { $settings.StatsIncludeArchive = $saved.statsIncludeArchive }
+                if ($saved.statsIncludeTrash -is [bool]) { $settings.StatsIncludeTrash = $saved.statsIncludeTrash }
+                if ($saved.statsHiddenTaskIds -is [Array]) { $settings.StatsHiddenTaskIds = @($saved.statsHiddenTaskIds | Where-Object { $_ -is [string] -and -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique) }
                 $theme = [string]$saved.theme
                 if ($theme -in @('system', 'light', 'dark')) {
                     $settings.Theme = $theme
@@ -1293,6 +1322,9 @@ function Save-Settings {
             remindersEnabled = [bool]$script:Settings.RemindersEnabled
             timingEnabled = [bool]$script:Settings.TimingEnabled
             statisticsEnabled = [bool]$script:Settings.StatisticsEnabled
+            statsIncludeArchive = [bool]$script:Settings.StatsIncludeArchive
+            statsIncludeTrash = [bool]$script:Settings.StatsIncludeTrash
+            statsHiddenTaskIds = @($script:Settings.StatsHiddenTaskIds)
             theme = [string]$script:Settings.Theme
             dataDirectory = $customDataDirectory
         }
@@ -2250,6 +2282,7 @@ function Add-TaskFromComposer {
     }
 
     $script:ActiveTasks.Insert(0, $task)
+    Place-NewTaskAfterPeers $task
     $autoStart = $script:Settings.TimingEnabled -and $script:ComposerTimer.IsChecked
     $script:ComposerTimer.IsChecked = $false
     $script:NewTaskInput.Clear()

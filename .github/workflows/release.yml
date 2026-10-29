@@ -22,7 +22,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          foreach ($test in @('validate','smoke','window','reminders','reminder-entry','priorities','features','lifecycle','tracking','backup')) {
+          foreach ($test in @('validate','smoke','window','reminders','reminder-entry','priorities','features','lifecycle','tracking','backup','polish','statistics-display')) {
             & powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File ('.\tests\' + $test + '.ps1')
             if ($LASTEXITCODE -ne 0) { throw ('Failed: ' + $test) }
           }

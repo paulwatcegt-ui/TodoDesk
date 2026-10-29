@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.3.1
+
+- Return keyboard focus to the composer after choosing a priority and let Enter create the draft instead of reopening the picker.
+- Add recoverable per-task statistics hiding and persistent archive/recycle-bin source filters; recompute totals and shares from visible records without deleting time data.
+
+- Keep settings controls clickable when the compact settings header overlaps the native window caption.
+- Append new tasks after existing same-priority tasks while preserving manual order.
+- Use an adorner insertion marker, gentle drag offsets and animated settling without squeezing task contents; throttle edge scrolling.
+- Use white text on a readable neutral surface for medium composer priority; preserve red and green text on matching tinted surfaces for high and low priorities in both themes.
 
 - Add confirmed per-item permanent deletion in the recycle bin, including removal of only that task's time history.
 - Keep the settings header and close button fixed while its body scrolls.

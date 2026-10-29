@@ -75,6 +75,16 @@ try {
     Pump
     Assert ($context.Check.IsKeyboardFocused -and $null -eq $context.Check.FocusVisualStyle) 'Editing returns keyboard focus without adding a second circle'
     Assert (-not ([IO.File]::ReadAllText((Join-Path $root 'app\ui.xaml')) -match '把事情，一件件做好。|留一点空间，专注眼前的小事。')) 'Removed hero copy is absent from the interface'
+    foreach ($offset in @(0,10000,0)) {
+        Open-Settings
+        Start-Sleep -Milliseconds 220; Pump
+        $window.FindName('SettingsScroll').ScrollToVerticalOffset($offset); Pump
+        foreach ($point in @([Windows.Point]::new(14,2),[Windows.Point]::new(4,4),[Windows.Point]::new(14,14))) {
+            Assert ((Hit ($script:SettingsCloseButton.PointToScreen($point))) -eq 1) 'Settings close button remains a client hit target even inside the native caption region'
+        }
+        $script:SettingsCloseButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent)); Pump
+        Assert (-not $script:SettingsOpen) 'Close settings works after reopening and scrolling'
+    }
     $testDataExists = Test-Path $script:DataFilePath
     $script:MinimizeButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
     Pump
