@@ -18,7 +18,7 @@ $script:AppRoot = if ($PSScriptRoot) {
     Split-Path -Parent $MyInvocation.MyCommand.Definition
 }
 
-$script:AppVersion = '1.3.1'
+$script:AppVersion = '1.3.2'
 $script:TaskFilter = 'all'
 $script:ComposerPriorityValue = 'medium'
 $script:ComposerReminderDraft = [pscustomobject]@{ Title = '新待办'; RemindAt = $null; IsDraft = $true }

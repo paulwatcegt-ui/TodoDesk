@@ -9,7 +9,7 @@ using System.Threading;
 
 internal static class Program
 {
-    private const string ProductVersion = "1.3.1";
+    private const string ProductVersion = "1.3.2";
     private const string AppUserModelId = "DaiBan.Todo.Desktop";
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -17,6 +17,14 @@ internal static class Program
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     private static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
+    private static string LoadApplicationScript()
+    {
+        const string loader = ". (Join-Path $script:AppRoot 'Tracking.ps1')";
+        string script = ReadResourceText("DaiBan.App.ps1");
+        if (!script.Contains(loader)) throw new InvalidOperationException("Tracking module insertion point missing.");
+        return script.Replace(loader, ReadResourceText("DaiBan.Tracking.ps1"));
+    }
 
     [STAThread]
     private static int Main()
@@ -37,13 +45,13 @@ internal static class Program
             Directory.CreateDirectory(Path.Combine(appRoot, "themes"));
 
             ExtractResource("DaiBan.ui.xaml", Path.Combine(appRoot, "ui.xaml"));
-            ExtractResource("DaiBan.Tracking.ps1", Path.Combine(appRoot, "Tracking.ps1"));
+
             ExtractResource("DaiBan.theme.light.xaml", Path.Combine(appRoot, "themes", "light.xaml"));
             ExtractResource("DaiBan.theme.dark.xaml", Path.Combine(appRoot, "themes", "dark.xaml"));
             ExtractResource("DaiBan.app.ico", Path.Combine(appRoot, "app.ico"));
             ExtractResource("DaiBan.LICENSE", Path.Combine(appRoot, "LICENSE"));
 
-            string script = ReadResourceText("DaiBan.App.ps1");
+            string script = LoadApplicationScript();
             Environment.SetEnvironmentVariable("DAIBAN_APP_ROOT", appRoot);
             Environment.CurrentDirectory = AppDomain.CurrentDomain.BaseDirectory;
 

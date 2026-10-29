@@ -3,7 +3,7 @@
 param([string]$MsiPath, [switch]$AllowApplicationControlBlock)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-if ([string]::IsNullOrWhiteSpace($MsiPath)) { $MsiPath = Join-Path $root 'dist\installer\TodoDesk-1.3.1-x64.msi' }
+if ([string]::IsNullOrWhiteSpace($MsiPath)) { $MsiPath = Join-Path $root 'dist\installer\TodoDesk-1.3.2-x64.msi' }
 $MsiPath = [IO.Path]::GetFullPath($MsiPath)
 $testRoot = Join-Path $root ('.testdata\installer-' + [guid]::NewGuid().ToString('N'))
 $installRoot = Join-Path $testRoot '自定义 安装路径'

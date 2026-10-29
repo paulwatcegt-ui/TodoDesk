@@ -30,6 +30,10 @@ jobs:
         shell: cmd
         run: if not exist dist\native\DaiBan.exe exit 1
 
+      - name: Verify embedded module with restricted execution policy
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\native-policy.ps1
+
       - name: Verify task interactions and persistence
         shell: cmd
         run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\smoke.ps1

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-  <Product Id="*" Name="TodoDesk" Language="2052" Version="1.3.1" Manufacturer="宋培恩" Codepage="936" UpgradeCode="{B4C0A0A6-5A65-4D56-9C9B-1E3C2F5D7A11}">
+  <Product Id="*" Name="TodoDesk" Language="2052" Version="1.3.2" Manufacturer="宋培恩" Codepage="936" UpgradeCode="{B4C0A0A6-5A65-4D56-9C9B-1E3C2F5D7A11}">
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" InstallPrivileges="limited" Platform="x64" />
     <MajorUpgrade DowngradeErrorMessage="已安装更新版本的 TodoDesk。" Schedule="afterInstallInitialize" />
     <MediaTemplate EmbedCab="yes" />

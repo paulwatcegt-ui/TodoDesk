@@ -40,6 +40,7 @@ if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
 }
 
 $required = @(
+    'tests\native-policy.ps1',
     'tests\statistics-display.ps1',
     'tests\polish.ps1',
     'tests\backup.ps1',
@@ -78,6 +79,7 @@ foreach ($relative in $required) {
 }
 
 $powershellFiles = @(
+    'tests\native-policy.ps1',
     'tests\statistics-display.ps1',
     'tests\polish.ps1',
     'tests\backup.ps1',
@@ -211,7 +213,7 @@ foreach ($themeName in @('light', 'dark')) {
 
 $appSource = [System.IO.File]::ReadAllText(
     (Join-Path $root 'app\DaiBan.ps1'), [System.Text.Encoding]::UTF8)
-Assert-True ($appSource -match "\`$script:AppVersion\s*=\s*'1\.3\.1'") 'app version is 1.3.1'
+Assert-True ($appSource -match "\`$script:AppVersion\s*=\s*'1\.3\.2'") 'app version is 1.3.2'
 Assert-True ($appSource -notmatch 'D:\\DeepSeekWork') 'no local workspace path in app'
 
 $userFacingSources = @(

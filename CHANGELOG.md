@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.2
+
+- Inline the embedded tracking module into the native host's application script instead of dot-sourcing a disk script under Restricted execution policy.
+- Add a restricted-runspace regression test with no external Tracking.ps1 file; keep system execution policy unchanged.
+
 ## 1.3.1
 
 - Return keyboard focus to the composer after choosing a priority and let Enter create the draft instead of reopening the picker.

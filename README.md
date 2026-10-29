@@ -159,7 +159,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\installer\setup-wix.ps
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\installer\build-msi.ps1
 ```
 
-输出 `dist/installer/TodoDesk-1.3.1-x64.msi`。EXE / MSI 默认未签名，见 [签名说明](docs/SIGNING.md)。安装包发布前需实测安装、升级与卸载。
+输出 `dist/installer/TodoDesk-1.3.2-x64.msi`。EXE / MSI 默认未签名，见 [签名说明](docs/SIGNING.md)。安装包发布前需实测安装、升级与卸载。
 
 ## 开源与发布
 

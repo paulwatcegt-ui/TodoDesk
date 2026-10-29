@@ -9,7 +9,7 @@ $light = Join-Path $WixPath 'light.exe'
 $uiExtension = Join-Path $WixPath 'WixUIExtension.dll'
 $outputDir = Join-Path $root 'dist\installer'
 $object = Join-Path $outputDir 'TodoDesk.wixobj'
-$msi = Join-Path $outputDir 'TodoDesk-1.3.1-x64.msi'
+$msi = Join-Path $outputDir 'TodoDesk-1.3.2-x64.msi'
 foreach ($tool in @($candle,$light,$uiExtension)) { if (-not (Test-Path -LiteralPath $tool)) { throw 'WiX tools missing. Run installer/setup-wix.ps1 first.' } }
 if (-not (Test-Path -LiteralPath (Join-Path $root 'dist\native\DaiBan.exe'))) { throw 'Build the app with host/build.ps1 first.' }
 [void][IO.Directory]::CreateDirectory($outputDir)
