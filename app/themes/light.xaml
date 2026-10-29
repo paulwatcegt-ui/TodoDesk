@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <LinearGradientBrush x:Key="WindowBackgroundBrush" StartPoint="0.08,0" EndPoint="0.92,1">
@@ -72,4 +72,12 @@
     <SolidColorBrush x:Key="PriorityMediumSurfaceBrush" Color="#FCF1D9" />
     <SolidColorBrush x:Key="PriorityLowSurfaceBrush" Color="#E4F3ED" />
     <SolidColorBrush x:Key="MenuSurfaceBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="StatsColor0" Color="#A9BDF8" />
+    <SolidColorBrush x:Key="StatsColor1" Color="#7CC9B1" />
+    <SolidColorBrush x:Key="StatsColor2" Color="#E9B66E" />
+    <SolidColorBrush x:Key="StatsColor3" Color="#E491AC" />
+    <SolidColorBrush x:Key="StatsColor4" Color="#A79AE4" />
+    <SolidColorBrush x:Key="StatsColor5" Color="#70BDCF" />
+    <SolidColorBrush x:Key="StatsColor6" Color="#D7CB7B" />
+    <SolidColorBrush x:Key="StatsColor7" Color="#B6BDCA" />
 </ResourceDictionary>

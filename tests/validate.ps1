@@ -40,6 +40,8 @@ if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
 }
 
 $required = @(
+    'tests\backup.ps1',
+    'tests\tracking.ps1',
     '.github\workflows\release.yml',
     'installer\setup-wix.ps1',
     'tests\installer.ps1',
@@ -52,6 +54,7 @@ $required = @(
     'preview.ps1',
     'tests\smoke.ps1',
     'app\DaiBan.ps1',
+    'app\Tracking.ps1',
     'app\ui.xaml',
     'app\app.ico',
     'app\themes\light.xaml',
@@ -73,6 +76,9 @@ foreach ($relative in $required) {
 }
 
 $powershellFiles = @(
+    'tests\backup.ps1',
+    'tests\tracking.ps1',
+    'app\Tracking.ps1',
     'installer\setup-wix.ps1',
     'tests\installer.ps1',
     'tests\lifecycle.ps1',
@@ -130,6 +136,8 @@ catch {
 
 if ($null -ne $ui) {
     $requiredNames = @(
+        'ImportBackupButton', 'SettingsScroll',
+        'ComposerTimer', 'FilterStats', 'TimingFeatureToggle', 'StatisticsFeatureToggle', 'ResetOrderButton',
         'FilterAll', 'FilterActive', 'FilterCompleted', 'TaskProgress', 'ProgressText',
         'EmptyTitle', 'EmptyDescription', 'StorageStatusText', 'StorageStatusDot', 'ListCountText',
         'MaximizeButton', 'MaximizeGlyph', 'CompletedToggleButton',

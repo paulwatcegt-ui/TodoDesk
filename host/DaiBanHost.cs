@@ -37,6 +37,7 @@ internal static class Program
             Directory.CreateDirectory(Path.Combine(appRoot, "themes"));
 
             ExtractResource("DaiBan.ui.xaml", Path.Combine(appRoot, "ui.xaml"));
+            ExtractResource("DaiBan.Tracking.ps1", Path.Combine(appRoot, "Tracking.ps1"));
             ExtractResource("DaiBan.theme.light.xaml", Path.Combine(appRoot, "themes", "light.xaml"));
             ExtractResource("DaiBan.theme.dark.xaml", Path.Combine(appRoot, "themes", "dark.xaml"));
             ExtractResource("DaiBan.app.ico", Path.Combine(appRoot, "app.ico"));

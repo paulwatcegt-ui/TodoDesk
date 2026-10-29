@@ -42,6 +42,8 @@ $script:DataFilePath = Join-Path $script:DataDirectory 'todos.json'
 $script:Settings = @{
     PriorityEnabled = $true
     RemindersEnabled = $true
+    TimingEnabled = $false
+    StatisticsEnabled = $false
     Theme = 'system'
     DataDirectory = $null
 }
@@ -54,6 +56,11 @@ $script:ActiveTasks = New-Object System.Collections.ArrayList
 $script:CompletedTasks = New-Object System.Collections.ArrayList
 $script:ArchivedTasks = New-Object System.Collections.ArrayList
 $script:TrashedTasks = New-Object System.Collections.ArrayList
+$script:TimeEntries = New-Object System.Collections.ArrayList
+$script:ActiveOrder = New-Object System.Collections.ArrayList
+$script:CompletedOrder = New-Object System.Collections.ArrayList
+$script:RunningTimer = $null
+$script:LastTimerSave = 0L
 $script:LoadError = $null
 $script:SettingsError = $null
 $script:SettingsReadError = $null
@@ -330,6 +337,7 @@ function Load-Tasks {
     $script:CompletedTasks.Clear()
     $script:ArchivedTasks.Clear()
     $script:TrashedTasks.Clear()
+    $script:TimeEntries.Clear(); $script:ActiveOrder.Clear(); $script:CompletedOrder.Clear(); $script:RunningTimer = $null
 
     if (-not (Test-Path -LiteralPath $script:DataFilePath)) {
         return
@@ -410,6 +418,20 @@ function Load-Tasks {
         foreach ($task in $completed) {
             [void]$script:CompletedTasks.Add($task)
         }
+        foreach ($name in @('timeEntries','activeOrder','completedOrder')) {
+            if ($null -ne $state.PSObject.Properties[$name] -and $state.$name -isnot [Array]) { throw 'Invalid tracking collection. Original file preserved.' }
+        }
+        $seenEntryIds = [System.Collections.Generic.HashSet[string]]::new()
+        foreach ($entry in @($state.timeEntries)) {
+            if ($null -eq $entry -and $null -eq $state.PSObject.Properties['timeEntries']) { continue }
+            if ($entry.id -isnot [string] -or $entry.taskId -isnot [string] -or $entry.title -isnot [string] -or
+                [string]::IsNullOrWhiteSpace($entry.id) -or [string]::IsNullOrWhiteSpace($entry.taskId) -or
+                -not $seenEntryIds.Add($entry.id) -or $null -eq $entry.start -or $null -eq $entry.end -or
+                [long]$entry.end -lt [long]$entry.start) { throw 'Invalid time entry. Original file preserved.' }
+            [void]$script:TimeEntries.Add([pscustomobject]@{Id=$entry.id;TaskId=$entry.taskId;Title=$entry.title;Start=[long]$entry.start;End=[long]$entry.end})
+        }
+        foreach ($id in @($state.activeOrder)) { if ($null -ne $id) { if ($id -isnot [string]) { throw 'Invalid task order.' }; [void]$script:ActiveOrder.Add($id) } }
+        foreach ($id in @($state.completedOrder)) { if ($null -ne $id) { if ($id -isnot [string]) { throw 'Invalid task order.' }; [void]$script:CompletedOrder.Add($id) } }
         $script:PersistenceState = 'saved'
     }
     catch {
@@ -419,6 +441,7 @@ function Load-Tasks {
         $script:CompletedTasks.Clear()
         $script:ArchivedTasks.Clear()
         $script:TrashedTasks.Clear()
+        $script:TimeEntries.Clear(); $script:ActiveOrder.Clear(); $script:CompletedOrder.Clear(); $script:RunningTimer = $null
     }
 }
 
@@ -547,6 +570,23 @@ function Refresh-StoredTasksDialog {
         })
         [System.Windows.Controls.DockPanel]::SetDock($button,'Right')
         [void]$dock.Children.Add($button)
+        if ($ctx.Mode -eq 'trash') {
+            $delete = [System.Windows.Controls.Button]::new()
+            $delete.Content = '永久删除'; $delete.Style = $script:Window.FindResource('SettingsButtonStyle')
+            $delete.SetResourceReference([System.Windows.Controls.Control]::ForegroundProperty, 'DangerBrush')
+            $delete.Margin = [System.Windows.Thickness]::new(8,0,0,0)
+            $delete.IsEnabled = $null -eq $script:LoadError
+            $delete.Tag = @{ Dialog = $Dialog; Task = $task }
+            $delete.Add_Click({
+                param($sender,$eventArgs)
+                $ctx = $sender.Tag
+                $answer = [System.Windows.MessageBox]::Show($ctx.Dialog,('永久删除“' + $ctx.Task.Title + '”及其计时记录？此操作无法撤销。'),'永久删除','YesNo','Warning','No')
+                if ($answer -eq 'Yes') { Remove-TrashedTaskPermanently $ctx.Task }
+                Refresh-StoredTasksDialog $ctx.Dialog
+            })
+            [System.Windows.Controls.DockPanel]::SetDock($delete,'Right')
+            [void]$dock.Children.Add($delete)
+        }
         $text = [System.Windows.Controls.TextBlock]::new()
         $text.Text = $task.Title + [Environment]::NewLine + $(if ($task.IsCompleted) { '已完成' } else { '待办' })
         $text.TextWrapping = 'Wrap'; $text.FontSize = 13
@@ -556,6 +596,86 @@ function Refresh-StoredTasksDialog {
     }
     $ctx.Clear.IsEnabled = $list.Count -gt 0 -and $null -eq $script:LoadError
     $ctx.Error.Text = if ($script:TasksDirty) { '更改尚未保存，请检查保存位置。' } else { '' }
+}
+
+function Remove-TrashedTaskPermanently {
+    param($Task)
+    if ($null -ne $script:LoadError -or $null -eq $Task -or -not (Test-TaskIdInList $script:TrashedTasks $Task.Id)) { return }
+    Remove-TaskTimeHistory @($Task.Id)
+    Remove-StoredTask $script:TrashedTasks $Task.Id
+    $script:UndoPayload = $null
+    Save-Tasks
+    Refresh-TaskList
+}
+
+# Validate in isolated collections using the same reader as normal startup.
+# Restore all live references even when the selected file is malformed.
+function Read-BackupState {
+    param([string]$Path)
+    $names = @('ActiveTasks','CompletedTasks','ArchivedTasks','TrashedTasks','TimeEntries','ActiveOrder','CompletedOrder','RunningTimer','DataFilePath','LoadError','PersistenceState','TasksDirty')
+    $original = @{}
+    foreach ($name in $names) { $original[$name] = Get-Variable -Scope Script -Name $name -ValueOnly }
+    try {
+        if (-not [IO.File]::Exists($Path)) { throw '备份文件不存在。' }
+        foreach ($name in $names[0..6]) { Set-Variable -Scope Script -Name $name -Value ([Collections.ArrayList]::new()) }
+        $script:DataFilePath = [IO.Path]::GetFullPath($Path)
+        Load-Tasks
+        if ($null -ne $script:LoadError) { throw '文件不是有效的 TodoDesk 备份，请选择 todos.json 或对应的 .bak 文件。' }
+        $result = @{}
+        foreach ($name in $names[0..6]) { $result[$name] = Get-Variable -Scope Script -Name $name -ValueOnly }
+        return $result
+    } finally {
+        foreach ($name in $names) { Set-Variable -Scope Script -Name $name -Value $original[$name] }
+    }
+}
+
+function Import-BackupFile {
+    param([string]$Path)
+    if ($null -ne $script:LoadError) { throw '当前清单读取失败，请先检查原文件或更换保存位置。' }
+    $incoming = Read-BackupState $Path
+    if (-not [string]::IsNullOrWhiteSpace($script:NewTaskInput.Text)) { Add-TaskFromComposer -ReturnFocus $false }
+    Commit-ActiveEdit
+    Save-Tasks
+    if (-not $script:LastTasksSaveSucceeded) { throw '当前数据尚未保存，已取消导入。请检查保存位置。' }
+    $backupPath = Join-Path $script:DataDirectory ('todos.before-import.' + (Get-Date).ToString('yyyyMMdd-HHmmss') + '.' + [guid]::NewGuid().ToString('N') + '.json')
+    [IO.File]::Copy($script:DataFilePath,$backupPath,$false)
+    $ids = [Collections.Generic.HashSet[string]]::new()
+    foreach ($task in @($script:ActiveTasks)+@($script:CompletedTasks)+@($script:ArchivedTasks)+@($script:TrashedTasks)) { [void]$ids.Add($task.Id) }
+    $addedIds = [Collections.Generic.HashSet[string]]::new()
+    $added = 0; $skipped = 0
+    foreach ($name in @('ActiveTasks','CompletedTasks','ArchivedTasks','TrashedTasks')) {
+        $destination = Get-Variable -Scope Script -Name $name -ValueOnly
+        foreach ($task in $incoming[$name]) {
+            if ($ids.Add($task.Id)) { [void]$destination.Add($task); [void]$addedIds.Add($task.Id); $added++ }
+            else { $skipped++ }
+        }
+    }
+    $entryIds = [Collections.Generic.HashSet[string]]::new()
+    foreach ($entry in $script:TimeEntries) { [void]$entryIds.Add($entry.Id) }
+    $addedTime = 0
+    foreach ($entry in $incoming.TimeEntries) {
+        if ($entryIds.Add($entry.Id)) { [void]$script:TimeEntries.Add($entry); $addedTime++ }
+    }
+    foreach ($name in @('ActiveOrder','CompletedOrder')) {
+        $destination = Get-Variable -Scope Script -Name $name -ValueOnly
+        foreach ($id in $incoming[$name]) { if ($addedIds.Contains($id) -and -not $destination.Contains($id)) { [void]$destination.Add($id) } }
+    }
+    $script:UndoPayload = $null
+    Save-Tasks
+    Refresh-TaskList
+    if (-not $script:LastTasksSaveSucceeded) { throw ('导入内容已保留在窗口中但尚未保存，请保留窗口并检查保存位置。导入前备份：' + $backupPath) }
+    return [pscustomobject]@{ Added=$added; Skipped=$skipped; TimeEntries=$addedTime; BackupPath=$backupPath }
+}
+
+function Select-BackupToImport {
+    $picker = [Microsoft.Win32.OpenFileDialog]::new()
+    $picker.Title = '导入 TodoDesk 备份'
+    $picker.Filter = 'TodoDesk 数据和备份 (*.json;*.bak)|*.json;*.bak|所有文件 (*.*)|*.*'
+    if ($picker.ShowDialog($script:Window) -ne $true) { return }
+    try {
+        $result = Import-BackupFile $picker.FileName
+        Show-AppMessage -Message ('导入完成：新增 {0} 项待办、{1} 条计时记录，保留 {2} 项同 ID 待办。{3}{3}导入前备份：{4}' -f $result.Added,$result.TimeEntries,$result.Skipped,[Environment]::NewLine,$result.BackupPath)
+    } catch { Show-AppMessage -Message $_.Exception.Message }
 }
 
 function Open-StoredTasksDialog {
@@ -583,6 +703,8 @@ function Open-StoredTasksDialog {
         $dialog = $sender.Tag
         $answer = [System.Windows.MessageBox]::Show($dialog,'永久删除回收站中的所有任务？此操作无法撤销。','清空回收站','YesNo','Warning','No')
         if ($answer -eq 'Yes' -and $null -eq $script:LoadError) {
+            $deletedIds = @($script:TrashedTasks | ForEach-Object { $_.Id })
+            Remove-TaskTimeHistory $deletedIds
             $script:TrashedTasks.Clear(); $script:UndoPayload = $null
             Save-Tasks; Refresh-TaskList; Refresh-StoredTasksDialog $dialog
         }
@@ -605,8 +727,9 @@ function Update-ComposerFeatures {
     if (-not $script:UiReady) { return }
     $script:ComposerPriority.Visibility = if ($script:Settings.PriorityEnabled -ne $false) { 'Visible' } else { 'Collapsed' }
     $script:ComposerReminderButton.Visibility = if ($script:Settings.RemindersEnabled -ne $false) { 'Visible' } else { 'Collapsed' }
+    Update-TrackingPreferences
     $when = $script:ComposerReminderDraft.RemindAt
-    $script:ComposerReminderButton.Content = if ($null -ne $when) { $when.ToString('HH:mm') + ' 提醒' } else { '设置提醒' }
+    $script:ComposerReminderButton.Content = if ($null -ne $when) { $when.ToString('HH:mm') + ' 提醒' } else { '提醒' }
     $script:ComposerReminderButton.ToolTip = if ($null -ne $when) { $when.ToString('yyyy-MM-dd HH:mm') + '，添加任务时一并保存' } else { '为新待办预先设置提醒时间' }
 }
 
@@ -615,6 +738,8 @@ function Update-FeaturePreferences {
     Commit-ActiveEdit
     $script:Settings.PriorityEnabled = [bool]$script:PriorityFeatureToggle.IsChecked
     $script:Settings.RemindersEnabled = [bool]$script:RemindersFeatureToggle.IsChecked
+    $script:Settings.TimingEnabled = [bool]$script:TimingFeatureToggle.IsChecked
+    $script:Settings.StatisticsEnabled = [bool]$script:StatisticsFeatureToggle.IsChecked
     Save-Settings
     Update-ComposerFeatures
     Refresh-TaskList
@@ -960,6 +1085,7 @@ function Update-StorageStatus {
     $script:ClearCompletedButton.IsEnabled = $canEdit
     $script:ArchiveCompletedButton.IsEnabled = $canEdit
     $script:ChangeDataFolderButton.IsEnabled = $canEdit -and $null -eq $script:SettingsReadError
+    $script:ImportBackupButton.IsEnabled = $canEdit
     $script:ResetDataFolderButton.IsEnabled = $canEdit -and $null -eq $script:SettingsReadError -and -not (
         Test-SameFolder -First $script:DataDirectory -Second $script:DefaultDataDirectory)
     Update-ComposerState
@@ -972,6 +1098,7 @@ function Save-Tasks {
         Update-StorageStatus
         return
     }
+    if ($null -ne $script:RunningTimer) { Flush-TaskTimer }
     $script:TasksDirty = $true
     $script:PersistenceState = 'saving'
     Update-StorageStatus
@@ -1013,6 +1140,9 @@ function Save-Tasks {
             items = @($items)
             archive = @($script:ArchivedTasks | ForEach-Object { ConvertTo-StoredTask $_ })
             trash = @($script:TrashedTasks | ForEach-Object { ConvertTo-StoredTask $_ })
+            timeEntries = @($script:TimeEntries | ForEach-Object { [pscustomobject]@{id=$_.Id;taskId=$_.TaskId;title=$_.Title;start=$_.Start;end=$_.End} })
+            activeOrder = @($script:ActiveOrder)
+            completedOrder = @($script:CompletedOrder)
         }
         $json = ConvertTo-Json -InputObject $state -Depth 5
 
@@ -1090,6 +1220,8 @@ function Load-Settings {
     $settings = @{
         PriorityEnabled = $true
         RemindersEnabled = $true
+        TimingEnabled = $false
+        StatisticsEnabled = $false
         Theme = 'system'
         DataDirectory = $null
     }
@@ -1104,6 +1236,8 @@ function Load-Settings {
                 $saved = $raw | ConvertFrom-Json
                 if ($saved.priorityEnabled -is [bool]) { $settings.PriorityEnabled = $saved.priorityEnabled }
                 if ($saved.remindersEnabled -is [bool]) { $settings.RemindersEnabled = $saved.remindersEnabled }
+                if ($saved.timingEnabled -is [bool]) { $settings.TimingEnabled = $saved.timingEnabled }
+                if ($saved.statisticsEnabled -is [bool]) { $settings.StatisticsEnabled = $saved.statisticsEnabled }
                 $theme = [string]$saved.theme
                 if ($theme -in @('system', 'light', 'dark')) {
                     $settings.Theme = $theme
@@ -1157,6 +1291,8 @@ function Save-Settings {
         $state = [pscustomobject][ordered]@{
             priorityEnabled = [bool]$script:Settings.PriorityEnabled
             remindersEnabled = [bool]$script:Settings.RemindersEnabled
+            timingEnabled = [bool]$script:Settings.TimingEnabled
+            statisticsEnabled = [bool]$script:Settings.StatisticsEnabled
             theme = [string]$script:Settings.Theme
             dataDirectory = $customDataDirectory
         }
@@ -1298,6 +1434,7 @@ function Set-EffectiveTheme {
     $script:EffectiveTheme = $ThemeName
     Update-ThemeBrushCache
     Apply-NativeTheme
+    if ($script:UiReady -and $script:TaskFilter -eq 'stats') { Update-StatisticsView }
 }
 
 function Update-ThemeControls {
@@ -1373,6 +1510,8 @@ function Update-SettingsUi {
     $script:SuppressFeatureEvents = $true
     $script:PriorityFeatureToggle.IsChecked = $script:Settings.PriorityEnabled -ne $false
     $script:RemindersFeatureToggle.IsChecked = $script:Settings.RemindersEnabled -ne $false
+    $script:TimingFeatureToggle.IsChecked = [bool]$script:Settings.TimingEnabled
+    $script:StatisticsFeatureToggle.IsChecked = [bool]$script:Settings.StatisticsEnabled
     $script:SuppressFeatureEvents = $false
     Update-ComposerFeatures
 }
@@ -1434,8 +1573,9 @@ function Enable-WindowChrome {
 function Initialize-Interface {
     param($Window)
 
+    . (Join-Path $script:AppRoot 'Tracking.ps1')
     $script:Window = $Window
-    foreach ($name in @('LicenseInfoButton','ArchiveCompletedButton','TrashSettingsButton','ArchiveSettingsButton','MainContent','ComposerPriority','ComposerReminderButton','PriorityFeatureToggle','RemindersFeatureToggle','ComposerHost','TaskArea','ListCard')) {
+    foreach ($name in @('ComposerTimer','FilterStats','TimingFeatureToggle','StatisticsFeatureToggle','ResetOrderButton','LicenseInfoButton','ArchiveCompletedButton','TrashSettingsButton','ArchiveSettingsButton','MainContent','ComposerPriority','ComposerReminderButton','PriorityFeatureToggle','RemindersFeatureToggle','ComposerHost','TaskArea','ListCard')) {
         Set-Variable -Scope Script -Name $name -Value $Window.FindName($name)
     }
     foreach ($name in @('FilterAll','FilterActive','FilterCompleted','ListCountText','TaskProgress','ProgressText','EmptyTitle','EmptyDescription','StorageStatusText','StorageStatusDot','MaximizeButton','MaximizeGlyph','CompletedToggleButton')) {
@@ -1464,6 +1604,7 @@ function Initialize-Interface {
     $script:SettingsScrim = $Window.FindName('SettingsScrim')
     $script:SettingsCardRoot = $Window.FindName('SettingsCardRoot')
     $script:SettingsCloseButton = $Window.FindName('SettingsCloseButton')
+    $script:ImportBackupButton = $Window.FindName('ImportBackupButton')
     $script:ThemeSystemButton = $Window.FindName('ThemeSystemButton')
     $script:ThemeLightButton = $Window.FindName('ThemeLightButton')
     $script:ThemeDarkButton = $Window.FindName('ThemeDarkButton')
@@ -1494,6 +1635,8 @@ function Initialize-Interface {
         $script:StorageStatusText.ToolTip = $script:DataFilePath
     }
     $script:UiReady = $true
+    Initialize-TrackingUI
+    Update-TrackingPreferences
     Update-ResponsiveLayout -Width $Window.Width -Height $Window.Height
     Update-StorageStatus
 }
@@ -1630,7 +1773,7 @@ function New-TaskRow {
     $title.Style = $script:TaskTitleStyle
     $title.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, (Get-TaskTitleBrush $Task))
     $title.DataContext = $Task
-    $title.ToolTip = [string]$Task.Title + [Environment]::NewLine + '双击编辑'
+    $title.ToolTip = [string]$Task.Title + [Environment]::NewLine + '双击编辑 · 拖动调整顺序'
     if ($script:Settings.PriorityEnabled -ne $false) {
         $title.ToolTip += [Environment]::NewLine + '优先级：' + (Get-PriorityInfo (Get-TaskPriority $Task)).Label
     }
@@ -1645,10 +1788,11 @@ function New-TaskRow {
     [System.Windows.Controls.Grid]::SetColumnSpan($title, 2)
     [void]$textHost.Children.Add($title)
     $reminderLabel = $null
-    if ($script:Settings.RemindersEnabled -ne $false -and $null -ne $Task.RemindAt -and -not $Task.IsCompleted) {
+    if ($script:Settings.TimingEnabled -or ($script:Settings.RemindersEnabled -ne $false -and $null -ne $Task.RemindAt -and -not $Task.IsCompleted)) {
         $title.Margin = [System.Windows.Thickness]::new(0,0,0,16)
         $reminderLabel = [System.Windows.Controls.TextBlock]::new()
-        $reminderLabel.Text = '提醒 · ' + $Task.RemindAt.ToString('MM-dd HH:mm')
+        $reminderLabel.Text = Get-TaskMetadata $Task
+        $reminderLabel.TextTrimming = 'CharacterEllipsis'
         $reminderLabel.FontSize = 11.5
         $reminderLabel.VerticalAlignment = 'Bottom'
         $reminderLabel.Margin = [System.Windows.Thickness]::new(0,0,0,5)
@@ -1704,6 +1848,12 @@ function New-TaskRow {
     # Keep the clock discoverable without taking width away from the task title.
     # Visibility follows pointer or keyboard focus via QuietRowActionStyle.
     [void]$actions.Children.Add($reminderButton)
+    $timerButton = New-RowActionButton -Geometry 'M 4,2 L 13,8 L 4,14 Z' -ToolTip '开始计时' -Style $script:RowIconStyle -Context $null
+    $timerButton.Style = $script:Window.FindResource('QuietRowActionStyle')
+    $timerButton.Tag = @{Task=$Task;Running=$false}
+    $timerButton.Visibility = if ($script:Settings.TimingEnabled -and -not $Task.IsCompleted) { 'Visible' } else { 'Collapsed' }
+    $timerButton.Add_Click({param($sender,$eventArgs); Start-TaskTimer $sender.Tag.Task})
+    [void]$actions.Children.Add($timerButton)
     $priorityButton = [System.Windows.Controls.Button]::new()
     $priorityButton.Style = $script:RowIconStyle
     Initialize-PriorityButton -Button $priorityButton -Task $Task
@@ -1734,6 +1884,7 @@ function New-TaskRow {
         Editor = $editor
         EditHost = $textHost
         PriorityButton = $priorityButton
+        TimerButton = $timerButton
         ReminderLabel = $reminderLabel
         Actions = $actions
         EditButton = $editButton
@@ -1830,6 +1981,7 @@ function New-TaskRow {
         }
     })
 
+    Enable-TaskDragging $row
     $row.Child = $grid
     return $row
 }
@@ -1846,12 +1998,12 @@ function Refresh-TaskList {
     $script:CompletedList.Children.Clear()
 
     if ($script:TaskFilter -ne 'completed') {
-        foreach ($task in @($script:ActiveTasks)) {
+        foreach ($task in @(Get-OrderedTasks)) {
             [void]$script:ActiveList.Children.Add((New-TaskRow -Task $task))
         }
     }
     if ($script:TaskFilter -ne 'active' -and ($script:CompletedExpanded -or $script:TaskFilter -eq 'completed')) {
-        foreach ($task in @($script:CompletedTasks)) {
+        foreach ($task in @(Get-OrderedTasks $true)) {
             [void]$script:CompletedList.Children.Add((New-TaskRow -Task $task))
         }
     }
@@ -1908,6 +2060,13 @@ function Refresh-TaskList {
     }
     $script:EditingContext = $null
     Update-StoredCounts
+    $stats = $script:TaskFilter -eq 'stats'
+    $script:StatisticsPanel.Visibility = if ($stats) { 'Visible' } else { 'Collapsed' }
+    $script:TaskScroll.Visibility = if ($stats) { 'Collapsed' } else { 'Visible' }
+    $script:ComposerHost.Visibility = if ($stats) { 'Collapsed' } else { 'Visible' }
+    if ($stats) { $script:EmptyState.Visibility='Collapsed'; Update-StatisticsView }
+    Update-TimerRows
+    Update-TrackingPreferences
 
     $targetOffset = if ($ResetScroll) { 0.0 } else { $previousOffset }
     $scrollViewer = $script:TaskScroll
@@ -2091,12 +2250,15 @@ function Add-TaskFromComposer {
     }
 
     $script:ActiveTasks.Insert(0, $task)
+    $autoStart = $script:Settings.TimingEnabled -and $script:ComposerTimer.IsChecked
+    $script:ComposerTimer.IsChecked = $false
     $script:NewTaskInput.Clear()
     $script:ComposerReminderDraft.RemindAt = $null
     Update-ComposerFeatures
     Update-ComposerState
     Save-Tasks
     Refresh-TaskList -ResetScroll
+    if ($autoStart) { Start-TaskTimer $task }
     $script:UndoPayload = @{ Kind = 'add'; Task = $task }
     Show-Toast -Message $(if ($script:LastTasksSaveSucceeded) { '已添加待办' } else { '已添加，尚未保存，请保留窗口' }) -CanUndo $true
     if ($ReturnFocus) {
@@ -2114,6 +2276,7 @@ function Toggle-Task {
     if ($null -ne $script:LoadError) { return }
 
     if ($null -eq $Task) { return }
+    if ($null -ne $script:RunningTimer -and $script:RunningTimer.TaskId -eq $Task.Id) { Stop-TaskTimer }
     Commit-ActiveEdit
 
     if ($Task.IsCompleted) {
@@ -2159,6 +2322,7 @@ function Remove-Task {
     if ($null -ne $script:LoadError) { return }
 
     if ($null -eq $Task) { return }
+    if ($null -ne $script:RunningTimer -and $script:RunningTimer.TaskId -eq $Task.Id) { Stop-TaskTimer }
     Commit-ActiveEdit
 
     $wasCompleted = $Task.IsCompleted
@@ -2226,8 +2390,10 @@ function Invoke-UndoPayload {
     switch ($Payload.Kind) {
         'priority' { $Payload.Task | Add-Member -NotePropertyName Priority -NotePropertyValue $Payload.Priority -Force }
         'add' {
+            if ($null -ne $script:RunningTimer -and $script:RunningTimer.TaskId -eq $Payload.Task.Id) { Stop-TaskTimer -Save $false }
             $index = Find-TaskIndex -Tasks $script:ActiveTasks -Id $Payload.Task.Id
             if ($index -ge 0) { $script:ActiveTasks.RemoveAt($index) }
+            Remove-TaskTimeHistory @($Payload.Task.Id)
         }
         'edit' { $Payload.Task.Title = $Payload.Title }
         'toggle' { Toggle-Task -Task $Payload.Task; return }
@@ -2632,6 +2798,7 @@ $script:WindowLoadedHandler = {
     if ($null -ne $script:ClockTimer) {
         $script:ClockTimer.Start()
     }
+    if ($null -ne $script:TrackingHeartbeat) { $script:TrackingHeartbeat.Start() }
 
     Check-Reminders
     $sender.Activate() | Out-Null
@@ -2658,6 +2825,7 @@ $script:WindowClosingHandler = {
     param($sender, $eventArgs)
     if (-not [string]::IsNullOrWhiteSpace($script:NewTaskInput.Text)) { Add-TaskFromComposer -ReturnFocus $false }
     Commit-ActiveEdit
+    if ($null -ne $script:RunningTimer) { Stop-TaskTimer }
     # No unconditional close-time write: unreadable data and unchanged files stay untouched.
     if ($script:TasksDirty -and $null -eq $script:LoadError) {
         Save-Tasks
@@ -2667,6 +2835,7 @@ $script:WindowClosingHandler = {
             return
         }
     }
+    if ($null -ne $script:TrackingHeartbeat) { $script:TrackingHeartbeat.Stop() }
     if ($null -ne $script:ClockTimer) { $script:ClockTimer.Stop() }
     if ($null -ne $script:ToastTimer) { $script:ToastTimer.Stop() }
     if ($null -ne $script:ThemeWatchTimer) { $script:ThemeWatchTimer.Stop() }
@@ -2797,13 +2966,14 @@ function Update-WindowControls {
 }
 
 function Wire-InterfaceEvents {
+    $script:ResetOrderButton.Add_Click({ Reset-TaskOrder })
     Initialize-PriorityButton -Button $script:ComposerPriority -Task $null
     $script:ComposerReminderButton.Add_Click({
         $script:ComposerReminderDraft.Title = if ([string]::IsNullOrWhiteSpace($script:NewTaskInput.Text)) { '新待办' } else { $script:NewTaskInput.Text }
         $script:ComposerReminderDialogOpen = $true
         try { Open-ReminderDialog $script:ComposerReminderDraft } finally { $script:ComposerReminderDialogOpen = $false }
     })
-    foreach ($toggle in @($script:PriorityFeatureToggle, $script:RemindersFeatureToggle)) {
+    foreach ($toggle in @($script:PriorityFeatureToggle, $script:RemindersFeatureToggle, $script:TimingFeatureToggle, $script:StatisticsFeatureToggle)) {
         $toggle.Add_Checked({ Update-FeaturePreferences })
         $toggle.Add_Unchecked({ Update-FeaturePreferences })
     }
@@ -2821,7 +2991,7 @@ function Wire-InterfaceEvents {
         $script:CompletedExpanded = -not $script:CompletedExpanded
         Refresh-TaskList
     })
-    foreach ($filter in @($script:FilterAll, $script:FilterActive, $script:FilterCompleted)) {
+    foreach ($filter in @($script:FilterAll, $script:FilterActive, $script:FilterCompleted, $script:FilterStats)) {
         $filter.Add_Checked({
             param($sender, $eventArgs)
             Commit-ActiveEdit
@@ -2836,6 +3006,7 @@ function Wire-InterfaceEvents {
     $script:TitleBar.Add_MouseLeftButtonDown($script:TitleBarMouseHandler)
     $script:SettingsButton.Add_Click({ Open-Settings })
     $script:SettingsCloseButton.Add_Click({ Close-Settings })
+    $script:ImportBackupButton.Add_Click({ Select-BackupToImport })
     $script:SettingsScrim.Add_MouseLeftButtonDown({ Close-Settings })
     $script:ThemeSystemButton.Add_Checked($script:ThemeChoiceChangedHandler)
     $script:ThemeLightButton.Add_Checked($script:ThemeChoiceChangedHandler)
@@ -2947,6 +3118,7 @@ catch {
     }
 }
 finally {
+    if ($null -ne $script:TrackingHeartbeat) { $script:TrackingHeartbeat.Stop() }
     if ($null -ne $script:ClockTimer) { $script:ClockTimer.Stop() }
     if ($null -ne $script:ToastTimer) { $script:ToastTimer.Stop() }
     if ($null -ne $script:ThemeWatchTimer) { $script:ThemeWatchTimer.Stop() }

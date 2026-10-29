@@ -758,7 +758,22 @@
 
                         <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
                             <Button x:Name="ComposerPriority" Style="{StaticResource RowIconButtonStyle}" Content="中" ToolTip="新任务优先级：中（点击选择）"/>
-                            <Button x:Name="ComposerReminderButton" Content="设置提醒" Margin="2,0,0,0" Height="28" Style="{StaticResource QuietTextButtonStyle}" AutomationProperties.Name="设置新待办的提醒时间"/>
+                            <Button x:Name="ComposerReminderButton" Content="提醒" Margin="2,0,0,0" Height="28" Style="{StaticResource QuietTextButtonStyle}" AutomationProperties.Name="设置新待办的提醒时间"/>
+                            <CheckBox x:Name="ComposerTimer" Content="计时" Visibility="Collapsed" VerticalAlignment="Center" Margin="3,0,0,0" Width="56" Height="28" Foreground="{DynamicResource SecondaryBrush}" FontSize="12" Cursor="Hand" FocusVisualStyle="{x:Null}" ToolTip="选中后，新任务添加时立即开始计时">
+                                <CheckBox.Template><ControlTemplate TargetType="CheckBox">
+                                    <Border x:Name="TimerChrome" CornerRadius="6" Background="Transparent" BorderBrush="Transparent" BorderThickness="1">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <ContentPresenter VerticalAlignment="Center"/>
+                                            <Path x:Name="TimerTick" Data="M 0,4 L 3,7 L 8,0" Width="8" Height="7" Stroke="{TemplateBinding Foreground}" StrokeThickness="1.4" Margin="4,0,0,0" Visibility="Collapsed"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="TimerChrome" Property="Background" Value="{DynamicResource RowHoverBrush}"/></Trigger>
+                                        <Trigger Property="IsChecked" Value="True"><Setter TargetName="TimerChrome" Property="Background" Value="{DynamicResource AccentSoftBrush}"/><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/><Setter TargetName="TimerTick" Property="Visibility" Value="Visible"/></Trigger>
+                                        <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="TimerChrome" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate></CheckBox.Template>
+                            </CheckBox>
                         </StackPanel>
                         <Grid Grid.Column="1" Margin="8,0,0,0">
                             <TextBlock x:Name="ComposerPlaceholder"
@@ -792,6 +807,7 @@
                             <RadioButton x:Name="FilterAll" Content="全部" Tag="all" IsChecked="True" GroupName="TaskFilter" Style="{StaticResource FilterStyle}" AutomationProperties.Name="查看全部任务"/>
                             <RadioButton x:Name="FilterActive" Content="待办" Tag="active" GroupName="TaskFilter" Style="{StaticResource FilterStyle}" AutomationProperties.Name="查看待办任务"/>
                             <RadioButton x:Name="FilterCompleted" Content="已完成" Tag="completed" GroupName="TaskFilter" Style="{StaticResource FilterStyle}" AutomationProperties.Name="查看已完成任务"/>
+                            <RadioButton x:Name="FilterStats" Content="统计" Tag="stats" GroupName="TaskFilter" Visibility="Collapsed" Style="{StaticResource FilterStyle}" AutomationProperties.Name="查看时间统计"/>
                         </StackPanel>
                         <TextBlock x:Name="ListCountText" HorizontalAlignment="Right" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource SecondaryBrush}"/>
                     </Grid>
@@ -1012,15 +1028,8 @@
                         BorderThickness="1"
                         CornerRadius="18"
                         Padding="26,22,26,22">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
                         <Grid Grid.Row="0">
                             <TextBlock VerticalAlignment="Center"
                                        FontSize="20"
@@ -1046,7 +1055,10 @@
                             </Button>
                         </Grid>
 
-                        <StackPanel Grid.Row="1" Margin="0,22,0,0">
+                        <ScrollViewer x:Name="SettingsScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,6,0,0">
+                        <Grid>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <StackPanel Grid.Row="1" Margin="0,16,0,0">
                             <TextBlock FontSize="11.5"
                                        FontWeight="SemiBold"
                                        Foreground="{DynamicResource TertiaryBrush}"
@@ -1079,8 +1091,11 @@
                             <TextBlock Text="功能" Margin="0,18,0,4" FontSize="11.5" Foreground="{DynamicResource SecondaryBrush}"/>
                             <CheckBox x:Name="PriorityFeatureToggle" Content="优先级" Style="{StaticResource FeatureToggleStyle}"/>
                             <CheckBox x:Name="RemindersFeatureToggle" Content="时间提醒" Style="{StaticResource FeatureToggleStyle}"/>
+                            <CheckBox x:Name="TimingFeatureToggle" Content="任务计时" Style="{StaticResource FeatureToggleStyle}"/>
+                            <CheckBox x:Name="StatisticsFeatureToggle" Content="时间统计" Style="{StaticResource FeatureToggleStyle}"/>
+                            <Button x:Name="ResetOrderButton" Content="恢复自动排序" HorizontalAlignment="Left" Style="{StaticResource QuietTextButtonStyle}" ToolTip="清除手动顺序；开启优先级时按高、中、低排序"/>
                             <StackPanel Orientation="Horizontal" Margin="0,12,0,5"><Button x:Name="TrashSettingsButton" Content="回收站" Style="{StaticResource SettingsButtonStyle}"/><Button x:Name="ArchiveSettingsButton" Content="归档记录" Margin="8,0,0,0" Style="{StaticResource SettingsButtonStyle}"/></StackPanel>
-                            <TextBlock Text="关闭功能不会删除已有的优先级和提醒设置。" TextWrapping="Wrap" Margin="0,5,0,0" FontSize="11" Foreground="{DynamicResource SecondaryBrush}"/>
+                            <TextBlock Text="关闭功能会保留已有数据。关闭计时会暂停当前任务。" TextWrapping="Wrap" Margin="0,5,0,0" FontSize="11" Foreground="{DynamicResource SecondaryBrush}"/>
                         </StackPanel>
 
                         <StackPanel Grid.Row="2" Margin="0,24,0,0">
@@ -1126,6 +1141,8 @@
                                        FontSize="11.2"
                                        Foreground="{DynamicResource TertiaryBrush}"
                                        Text="数据仅保存在本机，不会同步或上传。" />
+                            <Button x:Name="ImportBackupButton" Content="导入备份" HorizontalAlignment="Left" Margin="0,12,0,0" Style="{StaticResource SettingsButtonStyle}" ToolTip="导入 TodoDesk 的 todos.json 或 .bak 备份；合并新记录，保留当前同 ID 数据"/>
+                            <TextBlock Text="导入前自动备份当前清单，同 ID 记录保留当前内容。" TextWrapping="Wrap" Margin="0,8,0,0" FontSize="11" Foreground="{DynamicResource SecondaryBrush}"/>
                         </StackPanel>
 
                         <Grid Grid.Row="3" Margin="0,24,0,0">
@@ -1139,8 +1156,9 @@
                                        Foreground="{DynamicResource TertiaryBrush}"
                                        Text="本地 · 离线" />
                         </Grid>
+                        </Grid>
+                        </ScrollViewer>
                     </Grid>
-                    </ScrollViewer>
                 </Border>
             </Grid>
         </Grid>

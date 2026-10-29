@@ -61,7 +61,8 @@ function Test-EntryDialog([string]$mode) {
         } catch { $script:EntryDialogError = $_; if ($dialog) { $dialog.Close() } }
     })
     $script:EntryDialogTimer.Start()
-    $clock = if ($mode -eq 'draft') { $script:ComposerReminderButton } else { $script:ActiveList.Children[0].Tag.Actions.Children[0] }
+    $targetRow = @($script:ActiveList.Children | Where-Object { $_.Tag.Task.Id -eq $script:ActiveTasks[0].Id })[0]
+    $clock = if ($mode -eq 'draft') { $script:ComposerReminderButton } else { $targetRow.Tag.Actions.Children[0] }
     $clock.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
     if ($script:EntryDialogError) { throw $script:EntryDialogError }
 }
@@ -102,6 +103,17 @@ $script:EntryTimer.Add_Tick({
         Assert-Entry ($script:ActiveTasks[0].RemindAt -eq $saved) 'Cancel leaves the previous reminder unchanged'
         Test-EntryDialog 'remove'
         Assert-Entry ($null -eq $script:ActiveTasks[0].RemindAt) 'Remove clears the reminder'
+        $script:TimingFeatureToggle.IsChecked = $true
+        $script:StatisticsFeatureToggle.IsChecked = $true
+        $timer = $script:ActiveList.Children[0].Tag.TimerButton
+        $timer.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+        Assert-Entry ($null -ne $script:RunningTimer) 'Timer callback resolves from the actual application script scope'
+        $timer.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))
+        Assert-Entry ($null -eq $script:RunningTimer -and $script:TimeEntries.Count -gt 0) 'Pause callback saves recorded time from the actual entry'
+        $script:FilterStats.IsChecked = $true
+        Assert-Entry ($script:StatsError.Text -eq '' -and $script:StatsPie.Children.Count -eq 1) 'Statistics renders a single-task pie from the actual entry'
+        $script:StatisticsPanel.FindName('StatsWeek').IsChecked = $true
+        Assert-Entry ($script:StatsPeriod -eq 'week') 'Statistics range callback resolves from the actual entry'
         [IO.File]::WriteAllText((Join-Path $env:DAIBAN_ENTRY_TEST_DIR 'result.txt'), 'passed')
     } catch { [IO.File]::WriteAllText((Join-Path $env:DAIBAN_ENTRY_TEST_DIR 'result.txt'), $_.ToString()) }
     finally { $script:Window.Close() }

@@ -28,6 +28,7 @@ $arguments = @(
     '/reference:System.Xml.dll',
     ('/resource:"' + (Join-Path $appDir 'DaiBan.ps1') + '",DaiBan.App.ps1'),
     ('/resource:"' + (Join-Path $appDir 'ui.xaml') + '",DaiBan.ui.xaml'),
+    ('/resource:"' + (Join-Path $appDir 'Tracking.ps1') + '",DaiBan.Tracking.ps1'),
     ('/resource:"' + (Join-Path $appDir 'themes\light.xaml') + '",DaiBan.theme.light.xaml'),
     ('/resource:"' + (Join-Path $appDir 'themes\dark.xaml') + '",DaiBan.theme.dark.xaml'),
     ('/resource:"' + (Join-Path $appDir 'app.ico') + '",DaiBan.app.ico'),

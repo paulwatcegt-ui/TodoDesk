@@ -57,3 +57,11 @@ jobs:
       - name: Verify recycle bin, archive and auto-add
         shell: cmd
         run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\lifecycle.ps1
+
+      - name: Verify task ordering, timers and time statistics
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\tracking.ps1
+
+      - name: Verify backup import and individual trash deletion
+        shell: cmd
+        run: powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\tests\backup.ps1

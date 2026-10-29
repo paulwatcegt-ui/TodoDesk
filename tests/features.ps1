@@ -66,7 +66,7 @@ try {
     Assert ($null -ne $script:EditingContext -and $ctx.PriorityButton.ContextMenu.IsOpen) 'Moving focus into the priority menu does not prematurely finish editing'
     $ctx.PriorityButton.ContextMenu.Items[0].RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.MenuItem]::ClickEvent))
     $ctx.PriorityButton.ContextMenu.IsOpen = $false
-    Assert ($script:ActiveTasks[0].Priority -eq 'high' -and $script:ActiveTasks[0].Title -eq '编辑文字并修改优先级') 'Edit and priority changes are both preserved'
+    Assert ($ctx.Task.Priority -eq 'high' -and $ctx.Task.Title -eq '编辑文字并修改优先级') 'Edit and priority changes are both preserved'
 
     $future = (Get-Date).AddHours(2)
     Set-TaskReminder $script:ComposerReminderDraft $future | Out-Null

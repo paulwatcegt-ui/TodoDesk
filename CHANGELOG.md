@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Add confirmed per-item permanent deletion in the recycle bin, including removal of only that task's time history.
+- Keep the settings header and close button fixed while its body scrolls.
+- Import existing TodoDesk JSON and backup files with validation, non-overwriting merge, automatic pre-import backup and save-failure protection.
+
+- Sort active tasks by priority, with persistent mouse drag ordering and a reset-to-automatic action.
+- Add opt-in task timers with single-task tracking, periodic local checkpoints and safe pause on completion, deletion or closing.
+- Add opt-in daily, weekly, monthly and custom-range time statistics with a pie chart and per-task shares, including date-boundary clipping.
+- Keep timer history and manual order as optional fields in the existing local JSON, protect invalid files, and include the tracking module in native builds.
+- Cover sorting, routed drops, timers, statistics, settings and save failures in local tests and CI.
+
 ## 1.3.0 — Unreleased
 
 - Added a Chinese MSI installation wizard with a selectable per-user install path, TodoDesk shortcuts, license display and uninstall registration.
